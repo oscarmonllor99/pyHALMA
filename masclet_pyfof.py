@@ -4,8 +4,8 @@ import matplotlib.cm as cm
 import pyfof
 import sys
 from numba import njit, prange, set_num_threads
-sys.path.append('/Users/monllor/projects/')
-from masclet_framework import read_masclet, units
+sys.path.append('/home/monllor/projects/')
+from masclet_framework import read_masclet, units, particles
 
 """
 Help on module pyfof:
@@ -62,6 +62,10 @@ with open('masclet_pyfof.dat', 'r') as f:
     f.readline()
     old_masclet = bool(int(f.readline()))
     f.readline()
+    write_particles = bool(int(f.readline()))
+    f.readline()
+    path_halo_particles = f.readline()[:-1]
+    f.readline()
     path_results = f.readline()[:-1]
     f.readline()
     catalogue_name = f.readline()[:-1]
@@ -87,23 +91,23 @@ def good_groups(groups):
             good_index[ig] = True
     return good_index
 
-@njit
+@njit(parallel = True)
 def total_mass(part_list, st_mass):
     M = 0.
     npart = len(part_list)
-    for ip in range(npart):
+    for ip in prange(npart):
         ipp = part_list[ip]
         M += st_mass[ipp]
     return M
 
-@njit
+@njit(parallel = True)
 def center_of_mass(part_list, st_x, st_y, st_z, st_mass):
     cx = 0.
     cy = 0.
     cz = 0.
     M = 0.
     npart = len(part_list)
-    for ip in range(npart):
+    for ip in prange(npart):
         ipp = part_list[ip]
         cx += st_mass[ipp]*st_x[ipp]
         cy += st_mass[ipp]*st_y[ipp]
@@ -115,13 +119,13 @@ def center_of_mass(part_list, st_x, st_y, st_z, st_mass):
     else:
         return 0., 0., 0., 0.
 
-@njit
+@njit(parallel = True)
 def CM_velocity(M, part_list, st_vx, st_vy, st_vz, st_mass):
     vx = 0.
     vy = 0.
     vz = 0.
     npart = len(part_list)
-    for ip in range(npart):
+    for ip in prange(npart):
         ipp = part_list[ip]
         vx += st_mass[ipp]*st_vx[ipp]
         vy += st_mass[ipp]*st_vy[ipp]
@@ -424,13 +428,13 @@ def half_mass_radius_proj(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass):
     return RAD05_x, RAD05_y, RAD05_z
 
 
-@njit
+@njit(parallel = True)
 def angular_momentum(M, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, cx, cy, cz, vx, vy, vz):
     lx = 0.
     ly = 0.
     lz = 0.
     npart = len(part_list)
-    for ip in range(npart):
+    for ip in prange(npart):
         ipp = part_list[ip]
         vvx = st_vx[ipp] - vx
         vvy = st_vy[ipp] - vy
@@ -447,10 +451,10 @@ def angular_momentum(M, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mas
 
 @njit
 def density_peak(part_list, st_x, st_y, st_z, st_mass):
-
-    grid_x = np.arange(np.min(st_x[part_list]) - ll, np.max(st_x[part_list]) + ll, ll)
-    grid_y = np.arange(np.min(st_y[part_list]) - ll, np.max(st_y[part_list]) + ll, ll)
-    grid_z = np.arange(np.min(st_z[part_list]) - ll, np.max(st_z[part_list]) + ll, ll)
+    N_cells = 50
+    grid_x = np.linspace(np.min(st_x[part_list]) - ll, np.max(st_x[part_list]) + ll, N_cells)
+    grid_y = np.linspace(np.min(st_y[part_list]) - ll, np.max(st_y[part_list]) + ll, N_cells)
+    grid_z = np.linspace(np.min(st_z[part_list]) - ll, np.max(st_z[part_list]) + ll, N_cells)
 
     nx = len(grid_x)
     ny = len(grid_y)
@@ -482,23 +486,23 @@ def density_peak(part_list, st_x, st_y, st_z, st_mass):
 
     return grid_x[xmax], grid_y[ymax], grid_z[zmax]
 
-@njit
+@njit(parallel = True)
 def star_formation(part_list, st_mass, st_age, cosmo_time, dt):
     mass_sfr = 0.
     Npart = len(part_list)
-    for ip in range(Npart):
+    for ip in prange(Npart):
         ipp = part_list[ip]
         if st_age[ipp] > (cosmo_time-1.1*dt):
                mass_sfr += st_mass[ipp]
 
     return mass_sfr 
 
-@njit
+@njit(parallel = True)
 def sigma_effective(part_list, R05, st_x, st_y, st_z, st_vx, st_vy, st_vz, cx, cy, cz, vx, vy, vz):
     Npart = len(part_list)
     sigma_05 = 0.
-    part_inside = 0.
-    for ip in range(Npart):
+    part_inside = 0
+    for ip in prange(Npart):
         ipp = part_list[ip]
         dx = cx - st_x[ipp]
         dy = cy - st_y[ipp]
@@ -507,8 +511,11 @@ def sigma_effective(part_list, R05, st_x, st_y, st_z, st_vx, st_vy, st_vz, cx, c
         if dist < R05:
             sigma_05 += (st_vx[ipp]-vx)**2 + (st_vy[ipp]-vy)**2 +(st_vz[ipp]-vz)**2
             part_inside += 1
-            
-    return np.sqrt(sigma_05/3.0/part_inside)
+    
+    if part_inside > 0.:
+        return np.sqrt(sigma_05/3.0/part_inside)
+    else:
+        return 0.
 
 @njit
 def sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, cx, cy, cz, R05x, R05y, R05z):
@@ -597,7 +604,7 @@ def sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, s
     else:
         return 0., 0., 0.
 
-@njit
+@njit(parallel = True)
 def avg_age_metallicity(part_list, st_age, st_met, st_mass, cosmo_time):
     mass = 0.
     avg_age = 0.
@@ -605,7 +612,7 @@ def avg_age_metallicity(part_list, st_age, st_met, st_mass, cosmo_time):
     avg_met = 0.
     avg_met_mass = 0.
     Npart = len(part_list)
-    for ip in range(Npart):
+    for ip in prange(Npart):
         ipp = part_list[ip]
         avg_age += (cosmo_time - st_age[ipp])
         avg_age_mass += (cosmo_time - st_age[ipp])*st_mass[ipp]
@@ -726,8 +733,13 @@ print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
 print()
 print('----> Using', ncore,'CPU threads')
 
+###############################
+set_num_threads(ncore)
+###############################
+
 total_iteration_data = []
 total_halo_data = []
+
 #loop over iterations
 oripas_before = []
 OMM = [] #HALOS PREVIOUS ITERATION
@@ -762,7 +774,7 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
     masclet_st_data = read_masclet.read_clst(iteration, path = path_results, parameters_path=path_results, 
                                                     digits=5, max_refined_level=1000, 
                                                     output_deltastar=False, verbose=False, output_position=True, 
-                                                    output_velocity=True, output_mass=True, output_temp=True,
+                                                    output_velocity=True, output_mass=True, output_time=True,
                                                     output_metalicity=True, output_id=True, are_BH = not old_masclet)
 
     st_x = masclet_st_data[0]
@@ -775,6 +787,13 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
     st_age = masclet_st_data[7]*units.time_to_yr/1e9 #in Gyr
     st_met = masclet_st_data[8]
     st_oripa = masclet_st_data[9] #necessary for mergers
+
+    # if old_masclet:
+
+    #     ###### IN 2017 SIMULATION FIX ORIPAS ############
+    #     print('!!!!!!!!!!!!! Fixing ORIPA (2017 or older simulations)')
+    #     st_oripa = particles.correct_positive_oripa(st_oripa, st_mass)
+    #     ################################################
 
     data = np.vstack((st_x, st_y, st_z)).T
     data = data.astype(np.float64)
@@ -890,13 +909,14 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
             n_cell = len(grid)
             SIG_1D_x[ihal], SIG_1D_y[ihal], SIG_1D_z[ihal] = sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, cx, cy, cz, RAD05_x[ihal], RAD05_y[ihal], RAD05_z[ihal])
             EDAD[ihal], EDAD_MASS[ihal], MET[ihal], MET_MASS[ihal] = avg_age_metallicity(part_list, st_age, st_met, st_mass, cosmo_time*units.time_to_yr/1e9)
-            
-        print()
-        print('CHECK min, max in R_05', np.min(RAD05)*rete*1e3, np.max(RAD05)*rete*1e3)
-        print('CHECK min, max in RMAX', np.min(RMAX)*rete*1e3, np.max(RMAX)*rete*1e3)
-        print('CHECK min, max in NPART', np.min(NPART), np.max(NPART))
-        print('CHECK min, max in J', np.min(J)*rete*1e3, np.max(J)*rete*1e3)
-        print()
+        
+        if len(new_groups)>0:
+            print()
+            print('CHECK min, max in R_05', np.min(RAD05)*rete*1e3, np.max(RAD05)*rete*1e3)
+            print('CHECK min, max in RMAX', np.min(RMAX)*rete*1e3, np.max(RMAX)*rete*1e3)
+            print('CHECK min, max in NPART', np.min(NPART), np.max(NPART))
+            print('CHECK min, max in J', np.min(J)*rete*1e3, np.max(J)*rete*1e3)
+            print()
         
         ##########################################
         ####### MERGER SECTION #####################
@@ -911,7 +931,7 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         for ih, halo in enumerate(new_groups): 
             oripas = st_oripa[halo]
             masses = st_mass[halo]
-            mass_intersections = np.zeros(len(OMM))
+            mass_intersections = np.zeros(len(OMM)) # mass coming from haloes in the iteration before
             nmergs = 0
             for oih, ooripas in enumerate(oripas_before):
                 intersection = np.in1d(oripas, ooripas, assume_unique = True)
@@ -927,7 +947,7 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
             
                 #FIRST LOOK IF THIS HALO IS THE RESULT OF THE MAIN PROGENITOR BREAKING APPART
                 if 1.2*MM[ih] < OMM[PRO1[ih]-1]:
-                    MER_TYPE[ih] = -1 #HALO BREAKING APPART
+                    MER_TYPE[ih] = -1 #Old HALO (OHALO) BREAKING APPART
             
                 else:
                     if NMERG[ih] > 1:
@@ -940,14 +960,15 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
                         if 1/20 < mer_frac < 1/3:
                             MER_TYPE[ih] = 2 #MINOR MERGER
 
-                        else: #mer_frac < 1/20
-                            MER_TYPE[ih] = 3 #ACCRETION
+                        else: #ACCRETION
+                            MER_TYPE[ih] = 3 
 
         ###########################################################
         ####### SORTING BY NUMBER OF PARTICLES ##################
         ###########################################################
 
         argsort_part = np.flip(np.argsort(NPART)) #sorted descending
+
         NPART = NPART[argsort_part]
         MM = MM[argsort_part]
         MSFR = MSFR[argsort_part]
@@ -979,7 +1000,11 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         MET = MET[argsort_part]
         MET_MASS = MET_MASS[argsort_part]
 
+        ##########################################
+        ##########################################
+        ##########################################
 
+        ##########################################
         #oripas of particle in halos of iteration before
         # and masses before
         oripas_before = []
@@ -988,10 +1013,9 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
             halo = new_groups[argsort_part[isort_part]]
             oripas = st_oripa[halo]
             oripas_before.append(oripas)
+        ##########################################
 
-        ##########################################
-        ##########################################
-        ##########################################
+
 
     else:
         print('No stars found!!')
@@ -1032,7 +1056,7 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         halo['Msfr'] = MSFR[ih]
         halo['Rmax'] = RMAX[ih]*rete*1e3 #kpc
         halo['R'] = RAD05[ih]*rete*1e3
-        halo['R_1d'] = (RAD05_x[ih] + RAD05_y[ih] + RAD05_z[ih])/3 *rete*1e3
+        halo['R_1d'] = (RAD05_x[ih] + RAD05_y[ih] + RAD05_z[ih])/3 * rete * 1e3
         halo['R_1dx'] = RAD05_x[ih]*rete*1e3
         halo['R_1dy'] = RAD05_y[ih]*rete*1e3
         halo['R_1dz'] = RAD05_z[ih]*rete*1e3
@@ -1042,9 +1066,9 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         halo['sigma_v_1dy'] = SIG_1D_y[ih]
         halo['sigma_v_1dz'] = SIG_1D_z[ih]
         halo['L'] = J[ih]*rete*1e3 # kpc km/s
-        halo['xcm'] = CX[ih]*1e3 #kpc
-        halo['ycm'] = CY[ih]*1e3
-        halo['zcm'] = CZ[ih]*1e3
+        halo['xcm'] = PEAKX[ih]*1e3 #kpc
+        halo['ycm'] = PEAKY[ih]*1e3
+        halo['zcm'] = PEAKZ[ih]*1e3
         halo['vx'] = VX[ih]
         halo['vy'] = VY[ih]
         halo['vz'] = VZ[ih]
@@ -1061,6 +1085,18 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
     total_iteration_data.append(iteration_data)
     total_halo_data.append(haloes)
 
+
+    ###########################################
+    ### SAVING PARTICLES in .npy (python friendly)
+    if write_particles and len(data)>0:
+        string_it = f'{iteration:05d}'
+        new_groups = np.array(new_groups, dtype=object)
+        new_groups = new_groups[argsort_part]
+        all_particles_in_haloes = np.concatenate(new_groups)
+        np.save(path_halo_particles+'/halotree'+string_it+'.npy', all_particles_in_haloes)
+    ###########################################
+
+
 write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = catalogue_name)
 
 
@@ -1068,7 +1104,7 @@ write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = catalogue
 ########## ########## ########## ########## ########## 
 ########## ########## ########## ########## ########## 
 ########## ########## ########## ########## ########## 
-# END   ##########
+########## ##########    END     ########## ##########
 ########## ########## ########## ########## ########## 
 ########## ########## ########## ########## ########## 
 ########## ########## ########## ########## ########## 
