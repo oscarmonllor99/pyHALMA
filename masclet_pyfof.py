@@ -1,11 +1,21 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
+import photutils
+from photutils.isophote import EllipseGeometry, Ellipse
+from photutils.aperture import EllipticalAperture
+from scipy.ndimage import gaussian_filter1d, gaussian_filter
 import pyfof
 import sys
+from scipy.ndimage import rotate
+from scipy.optimize import curve_fit, least_squares
+from scipy.interpolate import RegularGridInterpolator
 from numba import njit, prange, set_num_threads
+import time
+#Our things
 sys.path.append('/home/monllor/projects/')
 from masclet_framework import read_masclet, units, particles
+import sph3D
+from tqdm import tqdm
 
 """
 Help on module pyfof:
@@ -63,6 +73,8 @@ with open('masclet_pyfof.dat', 'r') as f:
     old_masclet = bool(int(f.readline()))
     f.readline()
     write_particles = bool(int(f.readline()))
+    f.readline()
+    sersic_flag = bool(int(f.readline()))
     f.readline()
     path_halo_particles = f.readline()[:-1]
     f.readline()
@@ -308,6 +320,7 @@ def clean_cell(cx, cy, cz, M, RRHH, grid, part_list, st_x, st_y, st_z, st_vx, st
 
     return cx, cy, cz, M, RRHH, control
 
+
 @njit
 def escape_velocity_cleaning(cx, cy, cz, vx, vy, vz, M, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, control, factor_v):
     npart = len(part_list)
@@ -492,7 +505,7 @@ def star_formation(part_list, st_mass, st_age, cosmo_time, dt):
     Npart = len(part_list)
     for ip in prange(Npart):
         ipp = part_list[ip]
-        if st_age[ipp] > (cosmo_time-1.1*dt):
+        if st_age[ipp] > (cosmo_time-1.1*dt): #10% tolerance
                mass_sfr += st_mass[ipp]
 
     return mass_sfr 
@@ -519,7 +532,6 @@ def sigma_effective(part_list, R05, st_x, st_y, st_z, st_vx, st_vy, st_vz, cx, c
 
 @njit
 def sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, cx, cy, cz, R05x, R05y, R05z):
-    
     Npart = len(part_list)
     quantas_x = np.ones((n_cell, n_cell), dtype = np.int32) #CUANTAS PARTÍCULAS EN CADA CELDA
     quantas_y = np.ones((n_cell, n_cell), dtype = np.int32)
@@ -550,8 +562,7 @@ def sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, s
     VCM_z /= SD_z
 
 
-
-    SIG_1D_x = np.zeros((n_cell, n_cell)) #VELOCIDAD DEL CENTRO DE MASAS DE CADA CELDA EN LA DIRECCIÓN DE VISIÓN 
+    SIG_1D_x = np.zeros((n_cell, n_cell)) #DISPERISIÓN DE VELOCIDADES EN CADA CELDA
     SIG_1D_y = np.zeros((n_cell, n_cell))
     SIG_1D_z = np.zeros((n_cell, n_cell))
     for ip in range(Npart):
@@ -559,9 +570,9 @@ def sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, s
         ix = np.argmin(np.abs(grid - (st_x[ipp]-cx)))
         iy = np.argmin(np.abs(grid - (st_y[ipp]-cy)))
         iz = np.argmin(np.abs(grid - (st_z[ipp]-cz)))
-        SIG_1D_x[iy, iz] += (VCM_x[iy, iz]-st_x[ipp])**2
-        SIG_1D_y[ix, iz] += (VCM_y[ix, iz]-st_y[ipp])**2
-        SIG_1D_z[ix, iy] += (VCM_z[ix, iy]-st_z[ipp])**2
+        SIG_1D_x[iy, iz] += (VCM_x[iy, iz]-st_vx[ipp])**2
+        SIG_1D_y[ix, iz] += (VCM_y[ix, iz]-st_vy[ipp])**2
+        SIG_1D_z[ix, iy] += (VCM_z[ix, iy]-st_vz[ipp])**2
 
     SIG_1D_x = np.sqrt(SIG_1D_x/quantas_x)
     SIG_1D_y = np.sqrt(SIG_1D_y/quantas_y)
@@ -571,10 +582,13 @@ def sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, s
 
     SIG_1D_x_05 = 0.
     counter_x = 0.
+
     SIG_1D_y_05 = 0.
     counter_y = 0.
+
     SIG_1D_z_05 = 0.
     counter_z = 0.
+
     for ip in range(Npart):
         ipp = part_list[ip]
         dx = cx - st_x[ipp]
@@ -599,10 +613,76 @@ def sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, s
             SIG_1D_z_05 += SIG_1D_z[ix, iy]
             counter_z += 1
 
+    ###########################################
+    #V/sigma and lambda part (Fast-Slow rotator)
+    ###########################################
+    sumVz = 0.
+    sumSigmaz = 0.
+    sumup_z = 0.
+    sumdown_z = 0.
+    for ix in range(n_cell):
+        for iy in range(n_cell):
+            Rbin = (grid[ix]**2 + grid[iy]**2)**0.5
+            if Rbin < R05z + 2*ll: #Tolerance of 1 cell
+                #vsigma
+                sumVz += VCM_z[ix, iy]**2 * SD_z[ix, iy]
+                sumSigmaz += SIG_1D_z[ix, iy]**2 * SD_z[ix, iy]
+                #lambda
+                sumup_z += SD_z[ix, iy] * Rbin * abs(VCM_z[ix, iy])
+                sumdown_z += SD_z[ix, iy] * Rbin * (VCM_z[ix, iy]**2 + SIG_1D_z[ix, iy]**2)**0.5
+
+    V_sigma_z = (sumVz/sumSigmaz)**0.5
+    lambda_z = sumup_z/sumdown_z
+
+    sumVy = 0.
+    sumSigmay = 0.
+    sumup_y = 0.
+    sumdown_y = 0.
+    for ix in range(n_cell):
+        for iz in range(n_cell):
+            Rbin = (grid[ix]**2 + grid[iz]**2)**0.5
+            if Rbin < R05y + 2*ll: #Tolerance of 1 cell
+                #vsigma
+                sumVy += VCM_y[ix, iz]**2 * SD_y[ix, iz]
+                sumSigmay += SIG_1D_y[ix, iz]**2 * SD_y[ix, iz]
+                #lambda
+                sumup_y += SD_y[ix, iz] * Rbin * abs(VCM_y[ix, iz])
+                sumdown_y += SD_y[ix, iz] * Rbin * (VCM_y[ix, iz]**2 + SIG_1D_y[ix, iz]**2)**0.5
+
+    V_sigma_y = (sumVy/sumSigmay)**0.5
+    lambda_y = sumup_y/sumdown_y
+
+    sumVx = 0.
+    sumSigmax = 0.
+    sumup_x = 0.
+    sumdown_x = 0.
+    for iy in range(n_cell):
+        for iz in range(n_cell):
+            Rbin = (grid[iy]**2 + grid[iz]**2)**0.5
+            if Rbin < R05x + 2*ll: #Tolerance of 1 cell
+                #vsigma
+                sumVx += VCM_x[iy, iz]**2 * SD_x[iy, iz]
+                sumSigmax += SIG_1D_x[iy, iz]**2 * SD_x[iy, iz]
+                #lambda
+                sumup_x += SD_x[iy, iz] * Rbin * abs(VCM_x[iy, iz])
+                sumdown_x += SD_x[iy, iz] * Rbin * (VCM_x[iy, iz]**2 + SIG_1D_x[iy, iz]**2)**0.5
+
+    V_sigma_x = (sumVx/sumSigmax)**0.5
+    lambda_x = sumup_x/sumdown_x
+
+    #AVERAGE
+    V_sigma = (V_sigma_x + V_sigma_y + V_sigma_z)/3.
+    lambda_ = (lambda_x + lambda_y + lambda_z)/3.
+
+    ###########################################
+    # RETURN
+    ###########################################
     if counter_x > 0 and counter_y > 0 and counter_z > 0:
-        return SIG_1D_x_05/counter_x, SIG_1D_y_05/counter_y, SIG_1D_z_05/counter_z
+        return SIG_1D_x_05/counter_x, SIG_1D_y_05/counter_y, SIG_1D_z_05/counter_z, V_sigma, lambda_
     else:
-        return 0., 0., 0.
+        return 0., 0., 0., 0., 0.
+    
+
 
 @njit(parallel = True)
 def avg_age_metallicity(part_list, st_age, st_met, st_mass, cosmo_time):
@@ -621,6 +701,198 @@ def avg_age_metallicity(part_list, st_age, st_met, st_mass, cosmo_time):
         mass += st_mass[ipp]
     
     return avg_age/Npart, avg_age_mass/mass, avg_met/Npart, avg_met_mass/mass
+
+
+def sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05, R05x, R05y, R05z):
+
+    R_sersic = 1.5*R05
+
+    #ONLY CONSIDER PARTICLES WITHIN R_sersic
+    x_pos = st_x[part_list]
+    y_pos = st_y[part_list]
+    z_pos = st_z[part_list]
+    R_pos = ((x_pos-cx)**2 + (y_pos-cy)**2 + (z_pos-cz)**2)**0.5
+
+    part_list = part_list[R_pos < R_sersic]
+    x_pos = x_pos[R_pos < R_sersic]
+    y_pos = y_pos[R_pos < R_sersic]
+    z_pos = z_pos[R_pos < R_sersic]
+
+
+    # NOW CONVERT TO POSITIONS BETWEEN 0, 2*R_sersic, f4(float32)
+    x_pos = np.float32(x_pos - cx + R_sersic) # kpc
+    y_pos = np.float32(y_pos - cy + R_sersic)
+    z_pos = np.float32(z_pos - cz + R_sersic)
+
+    #DEFINING THE GRID
+    partNum = np.int32(len(part_list))
+    L_box = np.float32(2*R_sersic) #kpc
+    res = np.float32(      ll     )  # IMPORTANT!!!! RESOLUTION OF THE GRID FOR THE SERSIC INDEX
+                                       # IT SHOULD BE -->LL<--, BUT SMALL GALAXIES ARE A PROBLEM
+                                       # BIGGEST GALAXIES ARE NOT A PROBLEM, SINCE THERE IS A MAXIMUM NUMBER OF CELLS
+                                       # SEE BELOW
+    ncell = np.int32(min( max(L_box/res, 32), 64) )
+    res = np.float32(L_box/ncell)   # RECALCULATE RES IN CASE I CHANGED IT
+    kneigh = np.int32(16) # h distance in SPH kernel is calculated as the distance to the "kneigh" nearest neighbour
+                          # the higher the kneigh value, the more time it will take
+    # CALL FORTRAN 
+    field = np.ones(partNum, dtype = np.float32) #CONSIDER ALL PARTICLES AS EQUALLY MASSIVE
+    star_density_3D, hpart = sph3D.sph.main(x_pos, y_pos, z_pos, L_box, L_box, L_box, field, kneigh, ncell, ncell, ncell, partNum)
+    
+    #NOW, SURFACE DENSITY IN EACH PLANE
+    star_density_2D_xy = np.sum(star_density_3D, axis = 2)
+    star_density_2D_xz = np.sum(star_density_3D, axis = 1)
+    star_density_2D_yz = np.sum(star_density_3D, axis = 0)
+
+
+    #EXTRAPOLATION TO GET A BETTER RESOLUTION, with scipy.regular_grid_interpolator
+    grid_faces = np.linspace(0, L_box, ncell+1)
+    grid_centers = (grid_faces[1:] + grid_faces[:-1])/2.
+
+    interp_xy = RegularGridInterpolator((grid_centers, grid_centers), star_density_2D_xy, bounds_error=False, fill_value=None, method = 'linear')
+    interp_xz = RegularGridInterpolator((grid_centers, grid_centers), star_density_2D_xz, bounds_error=False, fill_value=None, method = 'linear')
+    interp_yz = RegularGridInterpolator((grid_centers, grid_centers), star_density_2D_yz, bounds_error=False, fill_value=None, method = 'linear')
+
+    n_extrapolate = 128
+    res = L_box/n_extrapolate
+    grid_faces_finner = np.linspace(0, L_box, n_extrapolate+1)
+    grid_centers_finner = (grid_faces_finner[1:] + grid_faces_finner[:-1])/2.
+    X, Y = np.meshgrid(grid_centers_finner, grid_centers_finner)
+
+    star_density_2D_xy = interp_xy((X, Y))
+    star_density_2D_xz = interp_xz((X, Y))
+    star_density_2D_yz = interp_yz((X, Y))
+
+    #CALL photutils TO FIND ISOPHOTES (IN THIS CASE WITH STAR NUMBER DENSITY)
+    #FIRST, BUILD AN ELLIPSE MODEL
+
+    #x0, y0 --> CENTRE OF THE GALAXY in pixels
+    #sma --> semi-major axis in pixels
+    #eps --> ellipticity
+    #pa --> position angle of sma (in radians) relative to the x axis
+
+    sma_xy = R05z/res #R05 in pixels
+    argmax_xy = np.argmax(star_density_2D_xy)
+    x0_xy = np.unravel_index(argmax_xy, star_density_2D_xy.shape)[0]
+    y0_xy = np.unravel_index(argmax_xy, star_density_2D_xy.shape)[1]
+    geometry_xy = EllipseGeometry(x0 = x0_xy, y0 = y0_xy, sma = sma_xy, eps = 0.3, pa = 45 / 180 * np.pi)
+
+    sma_xz = R05y/res #R05 in pixels
+    argmax_xz = np.argmax(star_density_2D_xz)
+    x0_xz = np.unravel_index(argmax_xz, star_density_2D_xz.shape)[0]
+    y0_xz = np.unravel_index(argmax_xz, star_density_2D_xz.shape)[1]
+    geometry_xz = EllipseGeometry(x0 = x0_xz, y0 = y0_xz, sma = sma_xz, eps = 0.3, pa = 45 / 180 * np.pi)
+
+    sma_yz = R05x/res #R05 in pixels
+    argmax_yz = np.argmax(star_density_2D_yz)
+    x0_yz = np.unravel_index(argmax_yz, star_density_2D_yz.shape)[0]
+    y0_yz = np.unravel_index(argmax_yz, star_density_2D_yz.shape)[1]
+    geometry_yz = EllipseGeometry(x0 = x0_yz, y0 = y0_yz, sma = sma_yz, eps = 0.3, pa = 45 / 180 * np.pi)
+    
+    # PLOT TO CHECK
+    # aper = EllipticalAperture((geometry_xy.x0, geometry_xy.y0), geometry_xy.sma,
+    #                         geometry_xy.sma * (1 - geometry_xy.eps),
+    #                         geometry_xy.pa)
+    # plt.imshow(star_density_2D_xy.T, origin='lower', cmap='viridis')
+    # aper.plot(color='white')
+    # plt.show()
+
+    #NOW FIT ---> MOST EXPENSIVE PART
+    #DEFINE THE FUNCTION TO FIT
+    def sersic(R, Re, Ie, n):
+        bn = 2*n - 1/3 + 4/(405*n)
+        return Ie*np.exp( -bn*( (R/Re)**(1/n) - 1 ) )
+    
+    minpoints = 10 # minimum number of points to fit
+    #XY PLANE
+    try:
+        ellipse_xy = Ellipse(star_density_2D_xy, geometry_xy)
+        isolist_xy = ellipse_xy.fit_image()
+        ellipticity_list_xy = isolist_xy.eps
+        intens_list_xy = isolist_xy.intens
+        sma_list_xy = isolist_xy.sma
+
+        if len(intens_list_xy) >= minpoints:
+            #FIT THE SERSIC INDEX
+            sma_list_xy = np.array(sma_list_xy)
+            intens_list_xy = np.array(intens_list_xy)
+            ellipticity_list_xy = np.array(ellipticity_list_xy)
+            #NOW, FIT
+            guess_xy = [sma_xy, np.max(intens_list_xy), 1.]
+            param_xy, _ = curve_fit(sersic, sma_list_xy, intens_list_xy, p0 = guess_xy)
+            n_xy = param_xy[2]
+            #WE SELECT THE ELLIPTICITY OF THE CLOSEST ISOPHOTE TO THE HALF LIGHT RADIUS
+            eps_xy = ellipticity_list_xy[np.argmin(np.abs(sma_list_xy - sma_xy))]
+
+        else:
+            n_xy = np.nan
+            eps_xy = np.nan
+
+    except:
+        n_xy = np.nan
+        eps_xy = np.nan
+
+    #XZ PLANE
+    try:
+        ellipse_xz = Ellipse(star_density_2D_xz, geometry_xz)
+        isolist_xz = ellipse_xz.fit_image()
+        ellipticity_list_xz = isolist_xz.eps
+        intens_list_xz = isolist_xz.intens
+        sma_list_xz = isolist_xz.sma
+
+        if len(intens_list_xz) >= minpoints:
+            #FIT THE SERSIC INDEX
+            sma_list_xz = np.array(sma_list_xz)
+            intens_list_xz = np.array(intens_list_xz)
+            ellipticity_list_xz = np.array(ellipticity_list_xz)
+            #NOW, FIT
+            guess_xz = [sma_xz, np.max(intens_list_xz), 1.]
+            param_xz, _ = curve_fit(sersic, sma_list_xz, intens_list_xz, p0 = guess_xz)
+            n_xz = param_xz[2]
+            #WE SELECT THE ELLIPTICITY OF THE CLOSEST ISOPHOTE TO THE HALF LIGHT RADIUS
+            eps_xz = ellipticity_list_xz[np.argmin(np.abs(sma_list_xz - sma_xz))]
+
+        else:
+            n_xz = np.nan
+            eps_xz = np.nan
+
+    except:
+        n_xz = np.nan
+        eps_xz = np.nan
+
+    #YZ PLANE
+    try:
+        ellipse_yz = Ellipse(star_density_2D_yz, geometry_yz)
+        isolist_yz = ellipse_yz.fit_image()
+        ellipticity_list_yz = isolist_yz.eps
+        intens_list_yz = isolist_yz.intens
+        sma_list_yz = isolist_yz.sma
+        
+        if len(intens_list_yz) >= minpoints:
+            #FIT THE SERSIC INDEX
+            sma_list_yz = np.array(sma_list_yz)
+            intens_list_yz = np.array(intens_list_yz)
+            ellipticity_list_yz = np.array(ellipticity_list_yz)
+            #NOW, FIT
+            guess_yz = [sma_yz, np.max(intens_list_yz), 1.]
+            param_yz, _ = curve_fit(sersic, sma_list_yz, intens_list_yz, p0 = guess_yz)
+            n_yz = param_yz[2]
+            #WE SELECT THE ELLIPTICITY OF THE CLOSEST ISOPHOTE TO THE HALF LIGHT RADIUS
+            eps_yz = ellipticity_list_yz[np.argmin(np.abs(sma_list_yz - sma_yz))]
+
+        else:
+            n_yz = np.nan
+            eps_yz = np.nan
+
+    except:
+        n_yz = np.nan
+        eps_yz = np.nan
+
+    #NOW, WE COMPUTE THE AVERAGE SERSIC INDEX AND ELLIPTICITY
+    n = np.nanmean([n_xy, n_xz, n_yz]) #average ignoring nans
+    eps = np.nanmean([eps_xy, eps_xz, eps_yz]) #average ignoring nans
+
+    return n, eps
 
 
 def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halma_catalogue_from_PYFOF.res'):
@@ -643,12 +915,12 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
         first_strings = ['Halo','n','Mass','Mass','Mass','frac', 'm_rps','m_rps','m_SFR', 
                          ' R ','R_05','R_05','R_05','R_05','R_05', 'sigma','sigma','sig_x',
                          'sig_y','sig_z','j', 'c_x','c_y','c_z', 'V_x','V_y','V_z','Pro.','Pro.',
-                         'n','type', 'age','age', 'Z','Z']
+                         'n','type', 'age','age', 'Z','Z', 'V/Sigma', 'lambda', 'sersic', '1-b/a']
         
         second_strings = ['ID',' part', ' * ','*_vis','gas','g_cold',  'cold','hot','  * ', 'max','3D',
                         '1D','1D_x','1D_y','1D_z', '05_3D','05_1D','05_1D','05_1D','05_1D',
                         '  ', 'kpc','kpc','kpc', 'km/s','km/s','km/s',
-                        '(1)','(2)','merg','merg','m_weig','mean', 'm_weig','mean']
+                        '(1)','(2)','merg','merg','m_weig','mean', 'm_weig','mean', '  ', '  ', '  ', '  ']
 
         first_line = f'{first_strings[0]:6s}{first_strings[1]:10s}{first_strings[2]:15s}{first_strings[3]:15s}\
 {first_strings[4]:15s}{first_strings[5]:8s}{first_strings[6]:15s}{first_strings[7]:15s}{first_strings[8]:15s}\
@@ -656,7 +928,7 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
 {first_strings[15]:10s}{first_strings[16]:10s}{first_strings[17]:10s}{first_strings[18]:10s}{first_strings[19]:10s}{first_strings[20]:10s}\
 {first_strings[21]:10s}{first_strings[22]:10s}{first_strings[23]:10s}{first_strings[24]:10s}{first_strings[25]:10s}{first_strings[26]:10s}\
 {first_strings[27]:6s}{first_strings[28]:6s}{first_strings[29]:6s}{first_strings[30]:6s}{first_strings[31]:9s}{first_strings[32]:9s}\
-{first_strings[33]:11s}{first_strings[34]:11s}'
+{first_strings[33]:11s}{first_strings[34]:11s}{first_strings[35]:11s}{first_strings[36]:11s}{first_strings[37]:11s}{first_strings[38]:11s}'
         
         second_line = f'{second_strings[0]:6s}{second_strings[1]:10s}{second_strings[2]:15s}{second_strings[3]:15s}\
 {second_strings[4]:15s}{second_strings[5]:8s}{second_strings[6]:15s}{second_strings[7]:15s}{second_strings[8]:15s}\
@@ -664,7 +936,7 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
 {second_strings[15]:10s}{second_strings[16]:10s}{second_strings[17]:10s}{second_strings[18]:10s}{second_strings[19]:10s}{second_strings[20]:10s}\
 {second_strings[21]:10s}{second_strings[22]:10s}{second_strings[23]:10s}{second_strings[24]:10s}{second_strings[25]:10s}{second_strings[26]:10s}\
 {second_strings[27]:6s}{second_strings[28]:6s}{second_strings[29]:6s}{second_strings[30]:6s}{second_strings[31]:9s}{second_strings[32]:9s}\
-{second_strings[33]:11s}{second_strings[34]:11s}'
+{second_strings[33]:11s}{second_strings[34]:11s}{second_strings[35]:11s}{second_strings[36]:11s}{second_strings[37]:11s}{second_strings[38]:11s}'
         
         catalogue.write('\n')
         catalogue.write('------------------------------------------------------------------------------------------------------------')
@@ -694,7 +966,8 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
 {ih_values[21]:10.2f}{gap}{ih_values[22]:10.2f}{gap}{ih_values[23]:10.2f}{gap}\
 {ih_values[24]:10.2f}{gap}{ih_values[25]:10.2f}{gap}{ih_values[26]:10.2f}{gap}\
 {ih_values[27]:6d}{gap}{ih_values[28]:6d}{gap}{ih_values[29]:6d}{gap}{ih_values[30]:6d}{gap}\
-{ih_values[31]:9.3f}{gap}{ih_values[32]:9.3f}{gap}{ih_values[33]:11.3e}{gap}{ih_values[34]:11.3e}{gap}'
+{ih_values[31]:9.3f}{gap}{ih_values[32]:9.3f}{gap}{ih_values[33]:11.3e}{gap}{ih_values[34]:11.3e}{gap}\
+{ih_values[35]:10.2f}{gap}{ih_values[36]:10.2f}{gap}{ih_values[37]:10.2f}{gap}{ih_values[38]:10.2f}{gap}'
             
             catalogue.write(catalogue_line)
             catalogue.write('\n')
@@ -751,12 +1024,7 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
     print('Opening MASCLET files')
     print()
     #open MASCLET files
-    # irr: iteration number
-    # t: time
-    # nl: num of refinement levels
-    # mass_dmpart: mass of DM particles
-    # zeta: redshift
-
+    
     masclet_grid_data = read_masclet.read_grids(iteration, path=path_results, parameters_path=path_results, 
                                                 digits=5, read_general=True, read_patchnum=False, read_dmpartnum=False,
                                                 read_patchcellextension=False, read_patchcellposition=False, read_patchposition=False,
@@ -771,6 +1039,39 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
 
     print('Cosmo time (Gyr):', cosmo_time*units.time_to_yr/1e9)
     print('Redshift (z):', zeta)
+
+    # #READ GAS IF RPS
+    # if rps_flag:
+    #     print('RPS == True !!!! ')
+    #     print('     Opening grid and clus files')
+
+    #     grid_data = read_masclet.read_grids(iteration, path=path_results, parameters_path=path_results, digits=5, 
+    #                                                 read_general=True, read_patchnum=True, read_dmpartnum=False,
+    #                                                 read_patchcellextension=True, read_patchcellposition=True, read_patchposition=True,
+    #                                                 read_patchparent=False)
+    #     nl = grid_data[2]
+    #     npatch = grid_data[5] #number of patches in each level, starting in l=0
+    #     patchnx = grid_data[6] #patchnx (...): x-extension of each patch (in level l cells) (and Y and Z)
+    #     patchny = grid_data[7]
+    #     patchnz = grid_data[8]
+    #     patchrx = grid_data[12] #patchrx (...): physical position of the center of each patch first ¡l-1! cell (and Y and Z)
+    #     patchry = grid_data[13] # in Mpc
+    #     patchrz = grid_data[14]
+
+    #     gas_data = read_masclet.read_clus(iteration, path=path_results, parameters_path=path_results, digits=5, max_refined_level=1000, output_delta=True, 
+    #                                       output_v=True, output_pres=False, output_pot=True, output_opot=False, output_temp=True, output_metalicity=False,
+    #                                       output_cr0amr=True, output_solapst=True, is_mascletB=False, output_B=False, is_cooling=True, verbose=False)
+
+    #     gas_delta = gas_data[0]
+    #     gas_density = misctools.delta_to_rho(gas_delta)
+    #     gas_cr0amr = gas_data[1]
+    #     gas_solapst = gas_data[2]
+    #     gas_vx = gas_data[3]*3e5 #in km/s
+    #     gas_vy = gas_data[4]*3e5 #in km/s
+    #     gas_vz = gas_data[5]*3e5 #in km/s
+    #     gas_pot = gas_data[6]
+    #     gas_temp = gas_data[7]
+
     masclet_st_data = read_masclet.read_clst(iteration, path = path_results, parameters_path=path_results, 
                                                     digits=5, max_refined_level=1000, 
                                                     output_deltastar=False, verbose=False, output_position=True, 
@@ -817,7 +1118,7 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         RMAX = []
         NPART = []
         new_groups = []
-        for ihal in range(len(groups)):
+        for ihal in tqdm(range(len(groups))):
             part_list = np.array(groups[ihal])
             cx, cy, cz, M = center_of_mass(part_list, st_x, st_y, st_z, st_mass)
             M0 = M
@@ -864,7 +1165,8 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
 
         print('Number of haloes after phase-space cleaning:', NHAL)
         print('Number of particles in haloes after cleaning:', NPARTHAL)
-
+        print()
+        print('Calculating properties')
         #CALCULATE HALO PROPERTIES
         RAD05 = np.zeros(NHAL)
         RAD05_x = np.zeros(NHAL)
@@ -889,7 +1191,11 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         EDAD_MASS = np.zeros(NHAL)
         MET = np.zeros(NHAL)
         MET_MASS = np.zeros(NHAL)
-        for ihal in range(NHAL):
+        VSIGMA = np.zeros(NHAL)
+        LAMBDA = np.zeros(NHAL)
+        SERSIC = np.zeros(NHAL)
+        ELLIPTICITY = np.zeros(NHAL)
+        for ihal in tqdm(range(NHAL)):
             part_list = new_groups[ihal]
             PEAKX[ihal], PEAKY[ihal], PEAKZ[ihal] = density_peak(part_list, st_x, st_y, st_z, st_mass)
             cx = PEAKX[ihal]
@@ -901,13 +1207,16 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
             VX[ihal], VY[ihal], VZ[ihal] = CM_velocity(M, part_list, st_vx, st_vy, st_vz, st_mass)
             JX[ihal], JY[ihal], JZ[ihal] = angular_momentum(M, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, cx, cy, cz, VX[ihal], VY[ihal], VZ[ihal])
             J[ihal] = (JX[ihal]**2 + JY[ihal]**2 + JZ[ihal]**2)**0.5
+            #CARE HERE, RMAX IS CALCULATED WITH RESPECT TO THE CENTER OF MASS, NOT THE DENSITY PEAK
+            if sersic_flag:
+                SERSIC[ihal], ELLIPTICITY[ihal] = sersic_index(part_list, st_x, st_y, st_z, CX[ihal], CY[ihal], CZ[ihal], RAD05[ihal], RAD05_x[ihal], RAD05_y[ihal], RAD05_z[ihal])
             if it_count > 0:
                 MSFR[ihal] = star_formation(part_list, st_mass, st_age, cosmo_time*units.time_to_yr/1e9, dt)
 
             SIG_3D[ihal] = sigma_effective(part_list, RAD05[ihal], st_x, st_y, st_z, st_vx, st_vy, st_vz, cx, cy, cz, VX[ihal], VY[ihal], VZ[ihal])
-            grid = np.arange(-(RMAX[ihal]+ll), RMAX[ihal]+ll, 2*ll)
+            grid = np.arange(-(RMAX[ihal]+ll), RMAX[ihal]+ll, 2*ll) #centers of the cells
             n_cell = len(grid)
-            SIG_1D_x[ihal], SIG_1D_y[ihal], SIG_1D_z[ihal] = sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, cx, cy, cz, RAD05_x[ihal], RAD05_y[ihal], RAD05_z[ihal])
+            SIG_1D_x[ihal], SIG_1D_y[ihal], SIG_1D_z[ihal], VSIGMA[ihal], LAMBDA[ihal] = sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, cx, cy, cz, RAD05_x[ihal], RAD05_y[ihal], RAD05_z[ihal])
             EDAD[ihal], EDAD_MASS[ihal], MET[ihal], MET_MASS[ihal] = avg_age_metallicity(part_list, st_age, st_met, st_mass, cosmo_time*units.time_to_yr/1e9)
         
         if len(new_groups)>0:
@@ -960,7 +1269,7 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
                         if 1/20 < mer_frac < 1/3:
                             MER_TYPE[ih] = 2 #MINOR MERGER
 
-                        else: #ACCRETION
+                        else:                #ACCRETION
                             MER_TYPE[ih] = 3 
 
         ###########################################################
@@ -999,6 +1308,10 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         EDAD_MASS = EDAD_MASS[argsort_part]
         MET = MET[argsort_part]
         MET_MASS = MET_MASS[argsort_part]
+        VSIGMA = VSIGMA[argsort_part]
+        LAMBDA = LAMBDA[argsort_part]
+        SERSIC = SERSIC[argsort_part]
+        ELLIPTICITY = ELLIPTICITY[argsort_part]
 
         ##########################################
         ##########################################
@@ -1080,6 +1393,10 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         halo['age'] = EDAD[ih]
         halo['Z_m'] = MET[ih]
         halo['Z'] = MET_MASS[ih]
+        halo['Vsigma'] = VSIGMA[ih]
+        halo['lambda'] = LAMBDA[ih]
+        halo['sersic'] = SERSIC[ih]
+        halo['ellipticity'] = ELLIPTICITY[ih]
         haloes.append(halo)
 
     total_iteration_data.append(iteration_data)
