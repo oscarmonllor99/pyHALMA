@@ -454,8 +454,8 @@ def angular_momentum(M, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mas
         vvy = st_vy[ipp] - vy
         vvz = st_vz[ipp] - vz
         rx = st_x[ipp] - cx
-        ry = st_x[ipp] - cy
-        rz = st_x[ipp] - cz
+        ry = st_y[ipp] - cy
+        rz = st_z[ipp] - cz
 
         lx += st_mass[ipp]*(ry*vvz - rz*vvy)
         ly += st_mass[ipp]*(rz*vvx - rx*vvz)
@@ -780,6 +780,10 @@ def photutils_fit(R05, R05x, R05y, R05z, R_fit_min, R_fit_max, res, star_density
             #WE SELECT THE ELLIPTICITY OF THE CLOSEST ISOPHOTE TO THE HALF LIGHT RADIUS
             eps_xy = ellipticity_list_xy[np.argmin(np.abs(sma_list_xy - sma_xy))]
 
+            # CHECK FIT
+            # plt.plot(sma_list_xy, intens_list_xy, 'o')
+            # plt.plot(sma_list_xy, sersic(sma_list_xy, param_xy[0], param_xy[1], param_xy[2]))
+            # plt.show()
         else:
             n_xy = np.nan
             eps_xy = np.nan
@@ -1079,7 +1083,7 @@ def sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05, R05x, R05y, R05z)
                                        # IT SHOULD BE -->LL<--, BUT SMALL GALAXIES ARE A PROBLEM
                                        # BIGGEST GALAXIES ARE NOT A PROBLEM, SINCE THERE IS A MAXIMUM NUMBER OF CELLS
                                        # SEE BELOW
-    ncell = np.int32(min( max(L_box/res, 64), 96) )
+    ncell = np.int32(min( max(L_box/res, 32), 64) )
     res = np.float32(L_box/ncell)   # RECALCULATE RES IN CASE I CHANGED IT
     kneigh = np.int32(16) # h distance in SPH kernel is calculated as the distance to the "kneigh" nearest neighbour
                           # the higher the kneigh value, the more time it will take
@@ -1112,17 +1116,17 @@ def sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05, R05x, R05y, R05z)
     # star_density_2D_yz = interp_yz((X, Y))
 
     # APPLYING A GAUSSIAN FILTER TO SMOOTH THE SURFACE DENSITY
-    sfilter = 2.
-    star_density_2D_xy = gaussian_filter(star_density_2D_xy, sigma = sfilter)
-    star_density_2D_xz = gaussian_filter(star_density_2D_xz, sigma = sfilter)
-    star_density_2D_yz = gaussian_filter(star_density_2D_yz, sigma = sfilter)
+    # sfilter = 2.
+    # star_density_2D_xy = gaussian_filter(star_density_2D_xy, sigma = sfilter)
+    # star_density_2D_xz = gaussian_filter(star_density_2D_xz, sigma = sfilter)
+    # star_density_2D_yz = gaussian_filter(star_density_2D_yz, sigma = sfilter)
 
     # PLOT
-    fig, ax = plt.subplots(1, 3, figsize = (15, 5))
-    ax[0].imshow(star_density_2D_xy.T, origin = 'lower')
-    ax[1].imshow(star_density_2D_xz.T, origin = 'lower')
-    ax[2].imshow(star_density_2D_yz.T, origin = 'lower')
-    plt.show()
+    # fig, ax = plt.subplots(1, 3, figsize = (15, 5))
+    # ax[0].imshow(star_density_2D_xy.T, origin = 'lower')
+    # ax[1].imshow(star_density_2D_xz.T, origin = 'lower')
+    # ax[2].imshow(star_density_2D_yz.T, origin = 'lower')
+    # plt.show()
 
     #FITTING THE SERSIC PROFILE
     n, eps = sersic_fit(R05, R05x, R05y, R05z, R_fit_min, R_fit_max, res, star_density_2D_xy, star_density_2D_xz, star_density_2D_yz, fit_mode = 'photutils')
