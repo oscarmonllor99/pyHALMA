@@ -149,6 +149,22 @@ def CM_velocity(M, part_list, st_vx, st_vy, st_vz, st_mass):
     else:
         return 0., 0., 0.
 
+@njit(parallel = True)
+def tully_fisher_velocity(part_list, cx, cy, cz, st_x, st_y, st_z, vx, vy, vz, st_vx, st_vy, st_vz, st_mass, RAD05):
+    mass_contribution = 0.
+    v_TF = 0.
+    npart = len(part_list)
+    for ip in prange(npart):
+        ipp = part_list[ip]
+        dx = cx - st_x[ipp]
+        dy = cy - st_y[ipp]
+        dz = cz - st_z[ipp]
+        dist = (dx**2 + dy**2 + dz**2)**0.5
+        if 0.9*RAD05 < dist < 1.1*RAD05:
+            v_TF += ( (st_vx[ipp] - vx)**2 + (st_vy[ipp] - vy)**2 + (st_vz[ipp] - vz)**2 )**0.5 * st_mass[ipp]
+            mass_contribution += st_mass[ipp]
+            
+    return v_TF/mass_contribution
 
 @njit
 def furthest_particle(cx, cy, cz, part_list, st_x, st_y, st_z):
@@ -1154,12 +1170,12 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
         first_strings = ['Halo','n','Mass','Mass','Mass','frac', 'm_rps','m_rps','m_SFR', 
                          ' R ','R_05','R_05','R_05','R_05','R_05', 'sigma','sigma','sig_x',
                          'sig_y','sig_z','j', 'c_x','c_y','c_z', 'V_x','V_y','V_z','Pro.','Pro.',
-                         'n','type', 'age','age', 'Z','Z', 'V/Sigma', 'lambda', 'sersic', '1-b/a']
+                         'n','type', 'age','age', 'Z','Z', 'V/Sigma', 'lambda', 'v_TF', 'sersic', '1-b/a']
         
         second_strings = ['ID',' part', ' * ','*_vis','gas','g_cold',  'cold','hot','  * ', 'max','3D',
                         '1D','1D_x','1D_y','1D_z', '05_3D','05_1D','05_1D','05_1D','05_1D',
                         '  ', 'kpc','kpc','kpc', 'km/s','km/s','km/s',
-                        '(1)','(2)','merg','merg','m_weig','mean', 'm_weig','mean', '  ', '  ', '  ', '  ']
+                        '(1)','(2)','merg','merg','m_weig','mean', 'm_weig','mean', '  ', '  ', 'km/s', '  ', '  ']
 
         first_line = f'{first_strings[0]:6s}{first_strings[1]:10s}{first_strings[2]:15s}{first_strings[3]:15s}\
 {first_strings[4]:15s}{first_strings[5]:8s}{first_strings[6]:15s}{first_strings[7]:15s}{first_strings[8]:15s}\
@@ -1167,7 +1183,7 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
 {first_strings[15]:10s}{first_strings[16]:10s}{first_strings[17]:10s}{first_strings[18]:10s}{first_strings[19]:10s}{first_strings[20]:10s}\
 {first_strings[21]:10s}{first_strings[22]:10s}{first_strings[23]:10s}{first_strings[24]:10s}{first_strings[25]:10s}{first_strings[26]:10s}\
 {first_strings[27]:6s}{first_strings[28]:6s}{first_strings[29]:6s}{first_strings[30]:6s}{first_strings[31]:9s}{first_strings[32]:9s}\
-{first_strings[33]:11s}{first_strings[34]:11s}{first_strings[35]:11s}{first_strings[36]:11s}{first_strings[37]:11s}{first_strings[38]:11s}'
+{first_strings[33]:11s}{first_strings[34]:11s}{first_strings[35]:11s}{first_strings[36]:11s}{first_strings[37]:11s}{first_strings[38]:11s}{first_strings[39]:11s}'
         
         second_line = f'{second_strings[0]:6s}{second_strings[1]:10s}{second_strings[2]:15s}{second_strings[3]:15s}\
 {second_strings[4]:15s}{second_strings[5]:8s}{second_strings[6]:15s}{second_strings[7]:15s}{second_strings[8]:15s}\
@@ -1175,7 +1191,7 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
 {second_strings[15]:10s}{second_strings[16]:10s}{second_strings[17]:10s}{second_strings[18]:10s}{second_strings[19]:10s}{second_strings[20]:10s}\
 {second_strings[21]:10s}{second_strings[22]:10s}{second_strings[23]:10s}{second_strings[24]:10s}{second_strings[25]:10s}{second_strings[26]:10s}\
 {second_strings[27]:6s}{second_strings[28]:6s}{second_strings[29]:6s}{second_strings[30]:6s}{second_strings[31]:9s}{second_strings[32]:9s}\
-{second_strings[33]:11s}{second_strings[34]:11s}{second_strings[35]:11s}{second_strings[36]:11s}{second_strings[37]:11s}{second_strings[38]:11s}'
+{second_strings[33]:11s}{second_strings[34]:11s}{second_strings[35]:11s}{second_strings[36]:11s}{second_strings[37]:11s}{second_strings[38]:11s}{second_strings[39]:11s}'
         
         catalogue.write('\n')
         catalogue.write('------------------------------------------------------------------------------------------------------------')
@@ -1206,7 +1222,7 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
 {ih_values[24]:10.2f}{gap}{ih_values[25]:10.2f}{gap}{ih_values[26]:10.2f}{gap}\
 {ih_values[27]:6d}{gap}{ih_values[28]:6d}{gap}{ih_values[29]:6d}{gap}{ih_values[30]:6d}{gap}\
 {ih_values[31]:9.3f}{gap}{ih_values[32]:9.3f}{gap}{ih_values[33]:11.3e}{gap}{ih_values[34]:11.3e}{gap}\
-{ih_values[35]:10.2f}{gap}{ih_values[36]:10.2f}{gap}{ih_values[37]:10.2f}{gap}{ih_values[38]:10.2f}{gap}'
+{ih_values[35]:11.2f}{gap}{ih_values[36]:11.2f}{gap}{ih_values[37]:11.2f}{gap}{ih_values[38]:11.2f}{gap}{ih_values[39]:11.2f}{gap}'
             
             catalogue.write(catalogue_line)
             catalogue.write('\n')
@@ -1432,6 +1448,7 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         MET_MASS = np.zeros(NHAL)
         VSIGMA = np.zeros(NHAL)
         LAMBDA = np.zeros(NHAL)
+        V_TF = np.zeros(NHAL)
         SERSIC = np.zeros(NHAL)
         ELLIPTICITY = np.zeros(NHAL)
         for ihal in tqdm(range(NHAL)):
@@ -1444,6 +1461,7 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
             RAD05[ihal] = half_mass_radius(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass)
             RAD05_x[ihal], RAD05_y[ihal], RAD05_z[ihal] = half_mass_radius_proj(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass)
             VX[ihal], VY[ihal], VZ[ihal] = CM_velocity(M, part_list, st_vx, st_vy, st_vz, st_mass)
+            V_TF[ihal] = tully_fisher_velocity(part_list, cx, cy, cz, st_x, st_y, st_z, VX[ihal], VY[ihal], VZ[ihal], st_vx, st_vy, st_vz, st_mass, RAD05[ihal])
             JX[ihal], JY[ihal], JZ[ihal] = angular_momentum(M, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, cx, cy, cz, VX[ihal], VY[ihal], VZ[ihal])
             J[ihal] = (JX[ihal]**2 + JY[ihal]**2 + JZ[ihal]**2)**0.5
             #CARE HERE, RMAX IS CALCULATED WITH RESPECT TO THE CENTER OF MASS, NOT THE DENSITY PEAK
@@ -1550,6 +1568,7 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         MET_MASS = MET_MASS[argsort_part]
         VSIGMA = VSIGMA[argsort_part]
         LAMBDA = LAMBDA[argsort_part]
+        V_TF = V_TF[argsort_part]
         SERSIC = SERSIC[argsort_part]
         ELLIPTICITY = ELLIPTICITY[argsort_part]
 
@@ -1633,8 +1652,10 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         halo['age'] = EDAD[ih]
         halo['Z_m'] = MET[ih]
         halo['Z'] = MET_MASS[ih]
+        #NEW ADDED
         halo['Vsigma'] = VSIGMA[ih]
         halo['lambda'] = LAMBDA[ih]
+        halo['v_TF'] = V_TF[ih]
         halo['sersic'] = SERSIC[ih]
         halo['ellipticity'] = ELLIPTICITY[ih]
         haloes.append(halo)
