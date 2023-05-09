@@ -719,6 +719,25 @@ def avg_age_metallicity(part_list, st_age, st_met, st_mass, cosmo_time):
     return avg_age/Npart, avg_age_mass/mass, avg_met/Npart, avg_met_mass/mass
 
 
+
+def halo_shape(part_list, st_x, st_y, st_z, st_mass, cx, cy, cz, RAD05):
+    # CALLS particles module routine to calculate the shape of a given particle list
+    x = st_x[part_list] - cx
+    y = st_y[part_list] - cy
+    z = st_z[part_list] - cz
+    m = st_mass[part_list]
+    r = RAD05
+    semiaxis, eigenvec = particles.ellipsoidal_shape_particles(x, y, z, m, r, tol=1e-3, maxiter=100, preserve='major', verbose=False)
+    if semiaxis is None:
+        return np.nan, np.nan, np.nan
+    else:
+        a = semiaxis[2]
+        b = semiaxis[1]
+        c = semiaxis[0]
+        return a, b, c
+
+
+
 def photutils_fit(R05, R05x, R05y, R05z, R_fit_min, R_fit_max, res, star_density_2D_xy, star_density_2D_xz, star_density_2D_yz):
     ###################################################################################
     #PHOTUTILS IS A PACKAGE THAT ALLOWS TO FIT ISOPHOTES TO A 2D IMAGE
@@ -1066,6 +1085,7 @@ def sersic_fit(R05, R05x, R05y, R05z, R_fit_min, R_fit_max, res, star_density_2D
         
     return n, eps
 
+
 def sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05, R05x, R05y, R05z):
     # In order to capture correctyle the slope of the profile, we need to fit between
     # the right radius. This is because the profile s not a perfect sersic, and it 
@@ -1085,7 +1105,6 @@ def sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05, R05x, R05y, R05z)
     x_pos = x_pos[R_pos < R_fit_max]
     y_pos = y_pos[R_pos < R_fit_max]
     z_pos = z_pos[R_pos < R_fit_max]
-
 
     # NOW CONVERT TO POSITIONS BETWEEN 0, 2*R_sersic, f4(float32)
     x_pos = np.float32(x_pos - cx + R_fit_max) # kpc
@@ -1112,7 +1131,7 @@ def sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05, R05x, R05y, R05z)
     star_density_2D_xz = np.mean(star_density_3D, axis = 1)
     star_density_2D_yz = np.mean(star_density_3D, axis = 0)
 
-
+    ##################################################################################################
     #EXTRAPOLATION TO GET A BETTER RESOLUTION, with scipy.regular_grid_interpolator
     # grid_faces = np.linspace(0, L_box, ncell+1)
     # grid_centers = (grid_faces[1:] + grid_faces[:-1])/2.
@@ -1150,6 +1169,159 @@ def sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05, R05x, R05y, R05z)
     return n, eps
 
 
+@njit
+def simple_fit(R_list_centers, dR, x_pos, y_pos, z_pos):
+    Nc = len(R_list_centers)
+    npart = len(x_pos)
+    surface_density_xy = np.zeros(Nc)
+    surface_density_xz = np.zeros(Nc)
+    surface_density_yz = np.zeros(Nc)
+    #Find surface number density profile in each projection XY, XZ, YZ
+    for ip in range(npart):
+        r_xy = np.sqrt(x_pos[ip]**2 + y_pos[ip]**2)
+        r_xz = np.sqrt(x_pos[ip]**2 + z_pos[ip]**2)
+        r_yz = np.sqrt(y_pos[ip]**2 + z_pos[ip]**2)
+        
+        #search radial bin
+        iR_xy = int(r_xy/dR)
+        iR_xz = int(r_xz/dR)
+        iR_yz = int(r_yz/dR)
+
+        #update surface density
+        if iR_xy < Nc:
+            surface_density_xy[iR_xy] += 1.
+        if iR_xz < Nc:
+            surface_density_xz[iR_xz] += 1.
+        if iR_yz < Nc:
+            surface_density_yz[iR_yz] += 1.
+
+    #normalize
+    surface_density_xy /= (2.*np.pi*R_list_centers*dR)
+    surface_density_xz /= (2.*np.pi*R_list_centers*dR)
+    surface_density_yz /= (2.*np.pi*R_list_centers*dR)
+
+    return surface_density_xy, surface_density_xz, surface_density_yz
+
+
+
+def simple_sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05):
+    ##################################################################################################
+    # THIS FUNCTION COMPUTES THE SERSIC INDEX OF THE STELLAR HALO ASSUMING CONTOURS ARE CIRCULAR.
+    # IT COUNTS THE NUMBER OF PARTICLES IN RADIAL BINS AND FITS A SERSIC PROFILE TO THE SURFACE DENSITY
+    # PROFILE. 
+    #
+    # n IS SENSITIVE TO Nc, THE NUMBER OF RADIAL BINS. IT SHOULD DEPEND ON RESOLUTION AND HALO SIZE.
+    #
+    # FUTURE IMPROVEMENTS: CONTOURS ARE NOT CIRCULAR, BUT ELLIPTICAL. THE SERSIC INDEX SHOULD BE
+    # COMPUTED IN ELLIPTICAL BINS. THIS IS NOT IMPLEMENTED YET.
+    ##################################################################################################
+
+    #RADIAL LIMITS
+    R_fit_min = 0.
+    R_fit_max = 2.*R05
+
+    #ONLY CONSIDER PARTICLES WITHIN R_fit_min and R_fit_max
+    x_pos = st_x[part_list]-cx
+    y_pos = st_y[part_list]-cy
+    z_pos = st_z[part_list]-cz
+    R_pos = ((x_pos)**2 + (y_pos)**2 + (z_pos)**2)**0.5
+
+    part_list = part_list[R_pos < R_fit_max]
+    x_pos = x_pos[R_pos < R_fit_max]
+    y_pos = y_pos[R_pos < R_fit_max]
+    z_pos = z_pos[R_pos < R_fit_max]
+    R_pos = ((x_pos)**2 + (y_pos)**2 + (z_pos)**2)**0.5
+
+    part_list = part_list[R_pos > R_fit_min]
+    x_pos = x_pos[R_pos > R_fit_min]
+    y_pos = y_pos[R_pos > R_fit_min]
+    z_pos = z_pos[R_pos > R_fit_min]
+    R_pos = ((x_pos)**2 + (y_pos)**2 + (z_pos)**2)**0.5
+
+    #RADIAL BINNING
+    Nc = 10 # number of "contours", radial bins
+    R_list, dR = np.linspace(R_fit_min, R_fit_max, Nc + 1, retstep = True)
+    R_list_centers = (R_list[1:] + R_list[:-1])/2.
+
+    surface_density_xy, surface_density_xz, surface_density_yz = simple_fit(R_list_centers, dR, x_pos, y_pos, z_pos)
+
+    # APPLYING A GAUSSIAN FILTER TO SMOOTH THE SURFACE DENSITY
+    surface_density_xy = gaussian_filter(surface_density_xy, sigma = 0.5)
+    surface_density_xz = gaussian_filter(surface_density_xz, sigma = 0.5)
+    surface_density_yz = gaussian_filter(surface_density_yz, sigma = 0.5)
+
+    # FIT THE TAIL: FROM SUPREME TO R_fit_max
+    # FIND THE PEAK OF THE SURFACE DENSITY
+    iRmax = np.argmax(surface_density_xy)
+    R_list_centers = R_list_centers[iRmax:]
+    surface_density_xy = surface_density_xy[iRmax:]
+    surface_density_xz = surface_density_xz[iRmax:]
+    surface_density_yz = surface_density_yz[iRmax:]
+
+    #FITTING THE SERSIC PROFILE
+    def sersic(R, Re, Ie, n):
+        bn = 2*n - 1/3 + 4/(405*n)
+        return Ie*np.exp( -bn*( (R/Re)**(1/n) - 1 ) )
+
+    guess_xy = [R05, surface_density_xy[0], 1.]
+    guess_xz = [R05, surface_density_xz[0], 1.]
+    guess_yz = [R05, surface_density_yz[0], 1.]
+
+    #FIT XY
+    try:
+        param_xy, _ = curve_fit(sersic, R_list_centers, surface_density_xy, p0 = guess_xy)
+        n_xy = param_xy[2]
+    except:
+        n_xy = np.nan
+
+    #FIT XZ
+    try:
+        param_xz, _ = curve_fit(sersic, R_list_centers, surface_density_xz, p0 = guess_xz)
+        n_xz = param_xz[2]
+    except:
+        n_xz = np.nan
+
+    #FIT YZ
+    try:
+        param_yz, _ = curve_fit(sersic, R_list_centers, surface_density_yz, p0 = guess_yz)
+        n_yz = param_yz[2]
+    except:
+        n_yz = np.nan
+
+    #CHECK UNUSUAL VALUES OF n
+    if n_xy < 0.2 or n_xy > 10.:
+        n_xy = np.nan
+    if n_xz < 0.2 or n_xz > 10.:
+        n_xz = np.nan
+    if n_yz < 0.2 or n_yz > 10.:
+        n_yz = np.nan
+
+    # PLOT THE 3 FITS TO CHECK, IF THEY SUCCEDED
+    # print('n_xy = ', n_xy)
+    # print('n_xz = ', n_xz)
+    # print('n_yz = ', n_yz)
+    # fig, ax = plt.subplots(1, 3, figsize = (15, 5))
+    # ax[0].plot(R_list_centers, surface_density_xy, 'k.')
+    # if not np.isnan(n_xy):
+    #     ax[0].plot(R_list_centers, sersic(R_list_centers, *param_xy), 'r--')
+    # ax[0].set_title('XY')
+
+    # ax[1].plot(R_list_centers, surface_density_xz, 'k.')
+    # if not np.isnan(n_xz):
+    #     ax[1].plot(R_list_centers, sersic(R_list_centers, *param_xz), 'r--')
+    # ax[1].set_title('XZ')
+
+    # ax[2].plot(R_list_centers, surface_density_yz, 'k.')
+    # if not np.isnan(n_yz):
+    #     ax[2].plot(R_list_centers, sersic(R_list_centers, *param_yz), 'r--')
+    # ax[2].set_title('YZ')
+    # plt.show()
+
+    # NANMEAN
+    n = np.nanmean([n_xy, n_xz, n_yz])
+    return n
+
+
 def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halma_catalogue_from_PYFOF.res'):
     catalogue = open(name, 'w')
     num_iter = len(total_iteration_data)
@@ -1170,12 +1342,12 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
         first_strings = ['Halo','n','Mass','Mass','Mass','frac', 'm_rps','m_rps','m_SFR', 
                          ' R ','R_05','R_05','R_05','R_05','R_05', 'sigma','sigma','sig_x',
                          'sig_y','sig_z','j', 'c_x','c_y','c_z', 'V_x','V_y','V_z','Pro.','Pro.',
-                         'n','type', 'age','age', 'Z','Z', 'V/Sigma', 'lambda', 'v_TF', 'sersic', '1-b/a']
+                         'n','type', 'age','age', 'Z','Z', 'V/Sigma', 'lambda', 'v_TF', 'a', 'b', 'c', 'sersic']
         
         second_strings = ['ID',' part', ' * ','*_vis','gas','g_cold',  'cold','hot','  * ', 'max','3D',
                         '1D','1D_x','1D_y','1D_z', '05_3D','05_1D','05_1D','05_1D','05_1D',
                         '  ', 'kpc','kpc','kpc', 'km/s','km/s','km/s',
-                        '(1)','(2)','merg','merg','m_weig','mean', 'm_weig','mean', '  ', '  ', 'km/s', '  ', '  ']
+                        '(1)','(2)','merg','merg','m_weig','mean', 'm_weig','mean', '  ', '  ', 'km/s', 'kpc', 'kpc', 'kpc', '  ']
 
         first_line = f'{first_strings[0]:6s}{first_strings[1]:10s}{first_strings[2]:15s}{first_strings[3]:15s}\
 {first_strings[4]:15s}{first_strings[5]:8s}{first_strings[6]:15s}{first_strings[7]:15s}{first_strings[8]:15s}\
@@ -1183,7 +1355,8 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
 {first_strings[15]:10s}{first_strings[16]:10s}{first_strings[17]:10s}{first_strings[18]:10s}{first_strings[19]:10s}{first_strings[20]:10s}\
 {first_strings[21]:10s}{first_strings[22]:10s}{first_strings[23]:10s}{first_strings[24]:10s}{first_strings[25]:10s}{first_strings[26]:10s}\
 {first_strings[27]:6s}{first_strings[28]:6s}{first_strings[29]:6s}{first_strings[30]:6s}{first_strings[31]:9s}{first_strings[32]:9s}\
-{first_strings[33]:11s}{first_strings[34]:11s}{first_strings[35]:11s}{first_strings[36]:11s}{first_strings[37]:11s}{first_strings[38]:11s}{first_strings[39]:11s}'
+{first_strings[33]:11s}{first_strings[34]:11s}{first_strings[35]:11s}{first_strings[36]:11s}{first_strings[37]:11s}{first_strings[38]:11s}{first_strings[39]:11s}\
+{first_strings[40]:11s}{first_strings[41]:11s}'
         
         second_line = f'{second_strings[0]:6s}{second_strings[1]:10s}{second_strings[2]:15s}{second_strings[3]:15s}\
 {second_strings[4]:15s}{second_strings[5]:8s}{second_strings[6]:15s}{second_strings[7]:15s}{second_strings[8]:15s}\
@@ -1191,7 +1364,8 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
 {second_strings[15]:10s}{second_strings[16]:10s}{second_strings[17]:10s}{second_strings[18]:10s}{second_strings[19]:10s}{second_strings[20]:10s}\
 {second_strings[21]:10s}{second_strings[22]:10s}{second_strings[23]:10s}{second_strings[24]:10s}{second_strings[25]:10s}{second_strings[26]:10s}\
 {second_strings[27]:6s}{second_strings[28]:6s}{second_strings[29]:6s}{second_strings[30]:6s}{second_strings[31]:9s}{second_strings[32]:9s}\
-{second_strings[33]:11s}{second_strings[34]:11s}{second_strings[35]:11s}{second_strings[36]:11s}{second_strings[37]:11s}{second_strings[38]:11s}{second_strings[39]:11s}'
+{second_strings[33]:11s}{second_strings[34]:11s}{second_strings[35]:11s}{second_strings[36]:11s}{second_strings[37]:11s}{second_strings[38]:11s}{second_strings[39]:11s}\
+{second_strings[40]:11s}{second_strings[41]:11s}'
         
         catalogue.write('\n')
         catalogue.write('------------------------------------------------------------------------------------------------------------')
@@ -1222,7 +1396,8 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
 {ih_values[24]:10.2f}{gap}{ih_values[25]:10.2f}{gap}{ih_values[26]:10.2f}{gap}\
 {ih_values[27]:6d}{gap}{ih_values[28]:6d}{gap}{ih_values[29]:6d}{gap}{ih_values[30]:6d}{gap}\
 {ih_values[31]:9.3f}{gap}{ih_values[32]:9.3f}{gap}{ih_values[33]:11.3e}{gap}{ih_values[34]:11.3e}{gap}\
-{ih_values[35]:11.2f}{gap}{ih_values[36]:11.2f}{gap}{ih_values[37]:11.2f}{gap}{ih_values[38]:11.2f}{gap}{ih_values[39]:11.2f}{gap}'
+{ih_values[35]:11.2f}{gap}{ih_values[36]:11.2f}{gap}{ih_values[37]:11.2f}{gap}{ih_values[38]:11.2f}{gap}{ih_values[39]:11.2f}{gap}\
+{ih_values[40]:11.2f}{gap}{gap}{ih_values[41]:11.2f}{gap}'
             
             catalogue.write(catalogue_line)
             catalogue.write('\n')
@@ -1449,8 +1624,10 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         VSIGMA = np.zeros(NHAL)
         LAMBDA = np.zeros(NHAL)
         V_TF = np.zeros(NHAL)
+        SAXISMAJOR = np.zeros(NHAL)
+        SAXISINTERMEDIATE = np.zeros(NHAL)
+        SAXISMINOR = np.zeros(NHAL)
         SERSIC = np.zeros(NHAL)
-        ELLIPTICITY = np.zeros(NHAL)
         for ihal in tqdm(range(NHAL)):
             part_list = new_groups[ihal]
             PEAKX[ihal], PEAKY[ihal], PEAKZ[ihal] = density_peak(part_list, st_x, st_y, st_z, st_mass)
@@ -1464,10 +1641,11 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
             V_TF[ihal] = tully_fisher_velocity(part_list, cx, cy, cz, st_x, st_y, st_z, VX[ihal], VY[ihal], VZ[ihal], st_vx, st_vy, st_vz, st_mass, RAD05[ihal])
             JX[ihal], JY[ihal], JZ[ihal] = angular_momentum(M, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, cx, cy, cz, VX[ihal], VY[ihal], VZ[ihal])
             J[ihal] = (JX[ihal]**2 + JY[ihal]**2 + JZ[ihal]**2)**0.5
+            SAXISMAJOR[ihal], SAXISINTERMEDIATE[ihal], SAXISMINOR[ihal] = halo_shape(part_list, st_x, st_y, st_z, st_mass, cx, cy, cz, RAD05[ihal])
             #CARE HERE, RMAX IS CALCULATED WITH RESPECT TO THE CENTER OF MASS, NOT THE DENSITY PEAK
             # and RAD05 is calculated with respect to the density peak
             if sersic_flag:
-                SERSIC[ihal], ELLIPTICITY[ihal] = sersic_index(part_list, st_x, st_y, st_z, CX[ihal], CY[ihal], CZ[ihal], RAD05[ihal], RAD05_x[ihal], RAD05_y[ihal], RAD05_z[ihal])
+                SERSIC[ihal] = simple_sersic_index(part_list, st_x, st_y, st_z, CX[ihal], CY[ihal], CZ[ihal], RAD05[ihal])
             if it_count > 0:
                 MSFR[ihal] = star_formation(part_list, st_mass, st_age, cosmo_time*units.time_to_yr/1e9, dt)
 
@@ -1569,8 +1747,10 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         VSIGMA = VSIGMA[argsort_part]
         LAMBDA = LAMBDA[argsort_part]
         V_TF = V_TF[argsort_part]
+        SAXISMAJOR = SAXISMAJOR[argsort_part]
+        SAXISINTERMEDIATE = SAXISINTERMEDIATE[argsort_part]
+        SAXISMINOR = SAXISMINOR[argsort_part]
         SERSIC = SERSIC[argsort_part]
-        ELLIPTICITY = ELLIPTICITY[argsort_part]
 
         ##########################################
         ##########################################
@@ -1656,8 +1836,10 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         halo['Vsigma'] = VSIGMA[ih]
         halo['lambda'] = LAMBDA[ih]
         halo['v_TF'] = V_TF[ih]
+        halo['a'] = SAXISMAJOR[ih]*rete*1e3
+        halo['b'] = SAXISINTERMEDIATE[ih]*rete*1e3
+        halo['c'] = SAXISMINOR[ih]*rete*1e3
         halo['sersic'] = SERSIC[ih]
-        halo['ellipticity'] = ELLIPTICITY[ih]
         haloes.append(halo)
 
     total_iteration_data.append(iteration_data)
