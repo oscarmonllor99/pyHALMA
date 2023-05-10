@@ -1,22 +1,12 @@
 import numpy as np
-import matplotlib.pyplot as plt
-import photutils
-import pyimfit
-from photutils.isophote import EllipseGeometry, Ellipse, build_ellipse_model
-from photutils.aperture import EllipticalAperture
-from scipy.ndimage import gaussian_filter1d, gaussian_filter
 import pyfof
 import sys
-from scipy.ndimage import rotate
-from scipy.optimize import curve_fit, least_squares
-from scipy.interpolate import RegularGridInterpolator
 from numba import njit, prange, set_num_threads
-import time
+from tqdm import tqdm
 #Our things
 sys.path.append('/home/monllor/projects/')
-from masclet_framework import read_masclet, units, particles
-import sph3D
-from tqdm import tqdm
+from masclet_framework import read_masclet, units
+import galaxy_image_fit, halo_properties
 
 """
 Help on module pyfof:
@@ -75,7 +65,7 @@ with open('masclet_pyfof.dat', 'r') as f:
     f.readline()
     write_particles = bool(int(f.readline()))
     f.readline()
-    sersic_flag = bool(int(f.readline()))
+    rps_flag = bool(int(f.readline()))
     f.readline()
     path_halo_particles = f.readline()[:-1]
     f.readline()
@@ -103,1223 +93,6 @@ def good_groups(groups):
         if len(groups[ig]) >= minp:
             good_index[ig] = True
     return good_index
-
-@njit(parallel = True)
-def total_mass(part_list, st_mass):
-    M = 0.
-    npart = len(part_list)
-    for ip in prange(npart):
-        ipp = part_list[ip]
-        M += st_mass[ipp]
-    return M
-
-@njit(parallel = True)
-def center_of_mass(part_list, st_x, st_y, st_z, st_mass):
-    cx = 0.
-    cy = 0.
-    cz = 0.
-    M = 0.
-    npart = len(part_list)
-    for ip in prange(npart):
-        ipp = part_list[ip]
-        cx += st_mass[ipp]*st_x[ipp]
-        cy += st_mass[ipp]*st_y[ipp]
-        cz += st_mass[ipp]*st_z[ipp]
-        M += st_mass[ipp]
-
-    if M > 0:
-        return cx/M, cy/M, cz/M, M
-    else:
-        return 0., 0., 0., 0.
-
-@njit(parallel = True)
-def CM_velocity(M, part_list, st_vx, st_vy, st_vz, st_mass):
-    vx = 0.
-    vy = 0.
-    vz = 0.
-    npart = len(part_list)
-    for ip in prange(npart):
-        ipp = part_list[ip]
-        vx += st_mass[ipp]*st_vx[ipp]
-        vy += st_mass[ipp]*st_vy[ipp]
-        vz += st_mass[ipp]*st_vz[ipp]
-    
-    if M>0.:
-        return vx/M, vy/M, vz/M
-    else:
-        return 0., 0., 0.
-
-@njit(parallel = True)
-def tully_fisher_velocity(part_list, cx, cy, cz, st_x, st_y, st_z, vx, vy, vz, st_vx, st_vy, st_vz, st_mass, RAD05):
-    mass_contribution = 0.
-    v_TF = 0.
-    npart = len(part_list)
-    for ip in prange(npart):
-        ipp = part_list[ip]
-        dx = cx - st_x[ipp]
-        dy = cy - st_y[ipp]
-        dz = cz - st_z[ipp]
-        dist = (dx**2 + dy**2 + dz**2)**0.5
-        if 0.9*RAD05 < dist < 1.1*RAD05:
-            v_TF += ( (st_vx[ipp] - vx)**2 + (st_vy[ipp] - vy)**2 + (st_vz[ipp] - vz)**2 )**0.5 * st_mass[ipp]
-            mass_contribution += st_mass[ipp]
-            
-    return v_TF/mass_contribution
-
-@njit
-def furthest_particle(cx, cy, cz, part_list, st_x, st_y, st_z):
-    RRHH = 0.
-    npart = len(part_list)
-    for ip in range(npart):
-        ipp = part_list[ip]
-        dx = cx - st_x[ipp]
-        dy = cy - st_y[ipp]
-        dz = cz - st_z[ipp]
-        dist = (dx**2 + dy**2 + dz**2)**0.5
-        if dist > RRHH:
-            RRHH = dist
-
-    return RRHH
-
-@njit
-def calc_cell(cx, cy, cz, grid, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, vcm_cell, mass_cell, quantas_cell, sig3D_cell):
-    npart = len(part_list)
-    n_cell = len(grid)
-    for ip in range(npart):
-        ipp = part_list[ip]
-        x_halo = st_x[ipp] - cx
-        y_halo = st_y[ipp] - cy
-        z_halo = st_z[ipp] - cz
-        ix = np.argmin(np.abs(grid - x_halo))
-        iy = np.argmin(np.abs(grid - y_halo))
-        iz = np.argmin(np.abs(grid - z_halo))
-        vcm_cell[ix, iy, iz, 0] += st_vx[ipp]*st_mass[ipp]
-        vcm_cell[ix, iy, iz, 1] += st_vy[ipp]*st_mass[ipp]
-        vcm_cell[ix, iy, iz, 2] += st_vz[ipp]*st_mass[ipp]
-        mass_cell[ix, iy, iz] += st_mass[ipp]
-        quantas_cell[ix, iy, iz] += 1
-    
-    #velocity normalization
-    for ix in range(n_cell):
-        for iy in range(n_cell):
-            for iz in range(n_cell):
-                if quantas_cell[ix, iy, iz]>0:
-                    vcm_cell[ix, iy, iz, :] /= mass_cell[ix, iy, iz]
-
-    for ip in range(npart):
-        ipp = part_list[ip]
-        x_halo = st_x[ipp] - cx
-        y_halo = st_y[ipp] - cy
-        z_halo = st_z[ipp] - cz
-        ix = np.argmin(np.abs(grid - x_halo))
-        iy = np.argmin(np.abs(grid - y_halo))
-        iz = np.argmin(np.abs(grid - z_halo)) 
-        dVx =  vcm_cell[ix, iy, iz, 0] - st_vx[ipp]
-        dVy =  vcm_cell[ix, iy, iz, 1] - st_vy[ipp]
-        dVz =  vcm_cell[ix, iy, iz, 2] - st_vz[ipp]
-        sig3D_cell[ix, iy, iz] += (dVx**2 + dVy**2 + dVz**2)
-
-    #sigma normalization
-    for ix in range(n_cell):
-        for iy in range(n_cell):
-            for iz in range(n_cell):
-                if quantas_cell[ix, iy, iz]>0:
-                    sig3D_cell[ix, iy, iz] = (sig3D_cell[ix, iy, iz]/3.0/quantas_cell[ix, iy, iz])**0.5
-
-    return vcm_cell, mass_cell, quantas_cell, sig3D_cell
-
-@njit
-def clean_cell(cx, cy, cz, M, RRHH, grid, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, vcm_cell, mass_cell, quantas_cell, sig3D_cell, ll, q_fil, sig_fil):
-    npart = len(part_list)
-    control = np.ones(npart, dtype=np.int32)
-    cleaned = 0
-    remaining = npart
-    
-    fac_sig = 2.0 #fac_sig
-    for ip in range(npart):
-        ipp = part_list[ip]
-        x_halo = st_x[ipp] - cx
-        y_halo = st_y[ipp] - cy
-        z_halo = st_z[ipp] - cz
-        ix = np.argmin(np.abs(grid - x_halo))
-        iy = np.argmin(np.abs(grid - y_halo))
-        iz = np.argmin(np.abs(grid - z_halo))
-        #si hay más partículas que el mínimo requerido q_fil
-        if quantas_cell[ix, iy, iz] > q_fil:
-            dVx =  vcm_cell[ix, iy, iz, 0] - st_vx[ipp]
-            dVy =  vcm_cell[ix, iy, iz, 1] - st_vy[ipp]
-            dVz =  vcm_cell[ix, iy, iz, 2] - st_vz[ipp]
-            bas = (dVx**2 + dVy**2 + dVz**2)**0.5
-            if quantas_cell[ix, iy, iz] > 2:
-                bas = bas/sig3D_cell[ix, iy, iz]
-            else:
-                bas = 0.
-
-            #si la sigma de la particula es mayor que un factor
-            # fac_sig*sig_fil veces la sigma de la celda, se desecha
-            if bas >= fac_sig*sig_fil:
-                control[ip] = 0
-                cleaned += 1
-                remaining -= 1
-        else:
-            control[ip] = 0
-            cleaned += 1
-            remaining -= 1
-
-    clean_particles = part_list[np.argwhere(control).flatten()]
-    #NEW GRID
-    cx, cy, cz, M = center_of_mass(clean_particles, st_x, st_y, st_z, st_mass)
-    RRHH = furthest_particle(cx, cy, cz, clean_particles, st_x, st_y, st_z)
-    grid = np.arange(-(RRHH+ll), RRHH+ll, 2*ll)
-    n_cell = len(grid)
-    vcm_cell = np.zeros((n_cell, n_cell, n_cell, 3))
-    mass_cell = np.zeros((n_cell, n_cell, n_cell))
-    quantas_cell = np.zeros((n_cell, n_cell, n_cell))
-    sig3D_cell = np.zeros((n_cell, n_cell, n_cell))
-    #REDUCE FAC SIG and CONTINUE CLEANING until fac_sig = 1 or frac <= 0.1+
-    fac_sig *= 0.75
-    if remaining > 0:
-        frac = cleaned/remaining
-        while frac > 0.1: #10% tolerance
-            #calculate quantities in grid
-            vcm_cell, mass_cell, quantas_cell, sig3D_cell = calc_cell(cx, cy, cz, grid, clean_particles, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, vcm_cell, mass_cell, quantas_cell, sig3D_cell)
-            cleaned = 0
-            for ip in range(npart):
-                if bool(control[ip]):
-                    ipp = part_list[ip]
-                    x_halo = st_x[ipp] - cx
-                    y_halo = st_y[ipp] - cy
-                    z_halo = st_z[ipp] - cz
-                    ix = np.argmin(np.abs(grid - x_halo))
-                    iy = np.argmin(np.abs(grid - y_halo))
-                    iz = np.argmin(np.abs(grid - z_halo))
-                    #si hay más partículas que el mínimo requerido q_fil
-                    if quantas_cell[ix, iy, iz] > q_fil:
-                        dVx =  vcm_cell[ix, iy, iz, 0] - st_vx[ipp]
-                        dVy =  vcm_cell[ix, iy, iz, 1] - st_vy[ipp]
-                        dVz =  vcm_cell[ix, iy, iz, 2] - st_vz[ipp]
-                        bas = (dVx**2 + dVy**2 + dVz**2)**0.5
-                        if quantas_cell[ix, iy, iz] >= 2:
-                            bas = bas/sig3D_cell[ix, iy, iz]
-                        else:
-                            bas = 0.
-
-                        #si la sigma de la particula es mayor que un factor
-                        # fac_sig*sig_fil veces la sigma de la celda, se desecha
-                        if bas >= fac_sig*sig_fil:
-                            control[ip] = 0
-                            cleaned += 1
-                            remaining -= 1
-                    else:
-                        control[ip] = 0
-                        cleaned += 1
-                        remaining -= 1
-
-            #NEW GRID
-            clean_particles = part_list[np.argwhere(control).flatten()]
-            cx, cy, cz, M = center_of_mass(clean_particles, st_x, st_y, st_z, st_mass)
-            RRHH = furthest_particle(cx, cy, cz, clean_particles, st_x, st_y, st_z)
-            grid = np.arange(-(RRHH+ll), RRHH+ll, 2*ll)
-            n_cell = len(grid)
-            vcm_cell = np.zeros((n_cell, n_cell, n_cell, 3))
-            mass_cell = np.zeros((n_cell, n_cell, n_cell))
-            quantas_cell = np.zeros((n_cell, n_cell, n_cell))
-            sig3D_cell = np.zeros((n_cell, n_cell, n_cell))
-
-            if remaining == 0:
-                return 0., 0., 0., 0., 0, control
-            else:
-                #FRACTION OF CLEANED PARTICLES
-                frac = cleaned/remaining
-                #New fac_sig
-                fac_sig *= 0.75
-                fac_sig = max(1., fac_sig)
-
-    return cx, cy, cz, M, RRHH, control
-
-
-@njit
-def escape_velocity_cleaning(cx, cy, cz, vx, vy, vz, M, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, control, factor_v):
-    npart = len(part_list)
-    mass = M*units.sun_to_kg
-    G = units.G_isu
-    for ip in range(npart):
-        if bool(control[ip]):
-            ipp = part_list[ip]
-            dx = cx - st_x[ipp]
-            dy = cy - st_y[ipp]
-            dz = cz - st_z[ipp]
-            dist = (dx**2 + dy**2 + dz**2)**0.5 * units.mpc_to_m
-
-            v_esc = (2*G*mass/dist)**0.5
-
-            dvx = vx - st_vx[ipp]
-            dvy = vy - st_vy[ipp]
-            dvz = vz - st_vz[ipp]
-            V = (dvx**2 + dvy**2 + dvz**2)**0.5 * 1e3
-
-            if V > factor_v*v_esc:
-                control[ip] = 0
-
-    return control
-
-
-@njit
-def half_mass_radius(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass):
-    npart = len(part_list)
-    #FIRST SORT PARTICLES BY DISTANCE TO CM
-
-    RAD_part = np.zeros(npart)
-    for ip in range(npart):
-        ipp = part_list[ip]
-        dx = cx - st_x[ipp]
-        dy = cy - st_y[ipp]
-        dz = cz - st_z[ipp]
-        dist = (dx**2 + dy**2 + dz**2)**0.5
-        RAD_part[ip] = dist
-
-    RAD_sorted_index = np.argsort(RAD_part)
-    part_list_sorted = part_list[RAD_sorted_index]
-    RAD_part = np.sort(RAD_part)
-    RAD05 = np.min(RAD_part)
-    mass_sum = 0.
-    for ip in range(npart):
-        ipp = part_list_sorted[ip]
-        mass_sum += st_mass[ipp]
-        if mass_sum > 0.5*M:
-            break
-        else:
-            RAD05 = RAD_part[ip]
-
-    return RAD05
-
-@njit
-def half_mass_radius_proj(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass):
-    npart = len(part_list)
-    #FIRST SORT PARTICLES BY DISTANCE TO CM
-
-    RAD_part_x = np.zeros(npart)
-    RAD_part_y = np.zeros(npart)
-    RAD_part_z = np.zeros(npart)
-    for ip in range(npart):
-        ipp = part_list[ip]
-        dx = cx - st_x[ipp]
-        dy = cy - st_y[ipp]
-        dz = cz - st_z[ipp]
-        dist_x = (dy**2 + dz**2)**0.5
-        dist_y = (dx**2 + dz**2)**0.5
-        dist_z = (dx**2 + dy**2)**0.5
-        RAD_part_x[ip] = dist_x
-        RAD_part_y[ip] = dist_y
-        RAD_part_z[ip] = dist_z
-
-    RAD_sorted_index_x = np.argsort(RAD_part_x)
-    part_list_sorted_x = part_list[RAD_sorted_index_x]
-    RAD_part_x = np.sort(RAD_part_x)
-    RAD05_x = np.min(RAD_part_x)
-
-    mass_sum_x = 0.
-    for ip in range(npart):
-        ipp = part_list_sorted_x[ip]
-        mass_sum_x += st_mass[ipp]
-        if mass_sum_x > 0.5*M:
-            break
-        else:
-            RAD05_x = RAD_part_x[ip]
-
-    RAD_sorted_index_y = np.argsort(RAD_part_y)
-    part_list_sorted_y = part_list[RAD_sorted_index_y]
-    RAD_part_y = np.sort(RAD_part_y)
-    RAD05_y = np.min(RAD_part_y)
-
-    mass_sum_y = 0.
-    for ip in range(npart):
-        ipp = part_list_sorted_y[ip]
-        mass_sum_y += st_mass[ipp]
-        if mass_sum_y > 0.5*M:
-            break
-        else:
-            RAD05_y = RAD_part_y[ip]
-
-    RAD_sorted_index_z = np.argsort(RAD_part_z)
-    part_list_sorted_z = part_list[RAD_sorted_index_z]
-    RAD_part_z = np.sort(RAD_part_z)
-    RAD05_z = np.min(RAD_part_z)
-
-    mass_sum_z = 0.
-    for ip in range(npart):
-        ipp = part_list_sorted_z[ip]
-        mass_sum_z += st_mass[ipp]
-        if mass_sum_z > 0.5*M:
-            break
-        else:
-            RAD05_z = RAD_part_z[ip]
-
-    return RAD05_x, RAD05_y, RAD05_z
-
-
-@njit(parallel = True)
-def angular_momentum(M, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, cx, cy, cz, vx, vy, vz):
-    lx = 0.
-    ly = 0.
-    lz = 0.
-    npart = len(part_list)
-    for ip in prange(npart):
-        ipp = part_list[ip]
-        vvx = st_vx[ipp] - vx
-        vvy = st_vy[ipp] - vy
-        vvz = st_vz[ipp] - vz
-        rx = st_x[ipp] - cx
-        ry = st_y[ipp] - cy
-        rz = st_z[ipp] - cz
-
-        lx += st_mass[ipp]*(ry*vvz - rz*vvy)
-        ly += st_mass[ipp]*(rz*vvx - rx*vvz)
-        lz += st_mass[ipp]*(rx*vvy - ry*vvz)
-
-    return lx/M, ly/M, lz/M
-
-@njit
-def density_peak(part_list, st_x, st_y, st_z, st_mass):
-    N_cells = 50
-    grid_x = np.linspace(np.min(st_x[part_list]) - ll, np.max(st_x[part_list]) + ll, N_cells)
-    grid_y = np.linspace(np.min(st_y[part_list]) - ll, np.max(st_y[part_list]) + ll, N_cells)
-    grid_z = np.linspace(np.min(st_z[part_list]) - ll, np.max(st_z[part_list]) + ll, N_cells)
-
-    nx = len(grid_x)
-    ny = len(grid_y)
-    nz = len(grid_z)
-
-    cell_mass = np.zeros((nx,ny,nz))
-    
-    Npart = len(part_list)
-    for ip in range(Npart):
-        ipp = part_list[ip]
-        ix = np.argmin(np.abs(grid_x - st_x[ipp]))
-        iy = np.argmin(np.abs(grid_y - st_y[ipp]))
-        iz = np.argmin(np.abs(grid_z - st_z[ipp]))
-        cell_mass[ix, iy, iz] += st_mass[ipp]
-
-    xmax = int(nx/2)
-    ymax = int(ny/2)
-    zmax = int(nz/2)
-    mass_max = 0.
-    for ix in range(nx):
-        for iy in range(ny):
-            for iz in range(nz):
-                if cell_mass[ix, iy, iz] > mass_max:
-                    xmax = ix
-                    ymax = iy
-                    zmax = iz
-                    mass_max = cell_mass[ix, iy, iz]
-
-
-    return grid_x[xmax], grid_y[ymax], grid_z[zmax]
-
-@njit(parallel = True)
-def star_formation(part_list, st_mass, st_age, cosmo_time, dt):
-    mass_sfr = 0.
-    Npart = len(part_list)
-    for ip in prange(Npart):
-        ipp = part_list[ip]
-        if st_age[ipp] > (cosmo_time-1.1*dt): #10% tolerance
-               mass_sfr += st_mass[ipp]
-
-    return mass_sfr 
-
-@njit(parallel = True)
-def sigma_effective(part_list, R05, st_x, st_y, st_z, st_vx, st_vy, st_vz, cx, cy, cz, vx, vy, vz):
-    Npart = len(part_list)
-    sigma_05 = 0.
-    part_inside = 0
-    for ip in prange(Npart):
-        ipp = part_list[ip]
-        dx = cx - st_x[ipp]
-        dy = cy - st_y[ipp]
-        dz = cz - st_z[ipp]
-        dist = (dx**2 + dy**2 + dz**2)**0.5
-        if dist < R05:
-            sigma_05 += (st_vx[ipp]-vx)**2 + (st_vy[ipp]-vy)**2 +(st_vz[ipp]-vz)**2
-            part_inside += 1
-    
-    if part_inside > 0.:
-        return np.sqrt(sigma_05/3.0/part_inside)
-    else:
-        return 0.
-
-@njit
-def sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, cx, cy, cz, R05x, R05y, R05z):
-    Npart = len(part_list)
-    quantas_x = np.ones((n_cell, n_cell), dtype = np.int32) #CUANTAS PARTÍCULAS EN CADA CELDA
-    quantas_y = np.ones((n_cell, n_cell), dtype = np.int32)
-    quantas_z = np.ones((n_cell, n_cell), dtype = np.int32)
-    VCM_x = np.zeros((n_cell, n_cell)) #VELOCIDAD DEL CENTRO DE MASAS DE CADA CELDA EN LA DIRECCIÓN DE VISIÓN 
-    VCM_y = np.zeros((n_cell, n_cell))
-    VCM_z= np.zeros((n_cell, n_cell))
-    SD_x = np.ones((n_cell, n_cell)) #DENSIDAD SUPERFICIAL EN MASA
-    SD_y = np.ones((n_cell, n_cell))
-    SD_z = np.ones((n_cell, n_cell))
-    for ip in range(Npart):
-        ipp = part_list[ip]
-        ix = np.argmin(np.abs(grid - (st_x[ipp]-cx)))
-        iy = np.argmin(np.abs(grid - (st_y[ipp]-cy)))
-        iz = np.argmin(np.abs(grid - (st_z[ipp]-cz)))
-        VCM_x[iy, iz] += st_vx[ipp]*st_mass[ipp]
-        VCM_y[ix, iz] += st_vy[ipp]*st_mass[ipp]
-        VCM_z[ix, iy] += st_vz[ipp]*st_mass[ipp]
-        SD_x[iy, iz] += st_mass[ipp]
-        SD_y[ix, iz] += st_mass[ipp]
-        SD_z[ix, iy] += st_mass[ipp]
-        quantas_x[iy, iz] += 1
-        quantas_y[ix, iz] += 1
-        quantas_z[ix, iy] += 1
-
-    VCM_x /= SD_x
-    VCM_y /= SD_y
-    VCM_z /= SD_z
-
-
-    SIG_1D_x = np.zeros((n_cell, n_cell)) #DISPERISIÓN DE VELOCIDADES EN CADA CELDA
-    SIG_1D_y = np.zeros((n_cell, n_cell))
-    SIG_1D_z = np.zeros((n_cell, n_cell))
-    for ip in range(Npart):
-        ipp = part_list[ip]
-        ix = np.argmin(np.abs(grid - (st_x[ipp]-cx)))
-        iy = np.argmin(np.abs(grid - (st_y[ipp]-cy)))
-        iz = np.argmin(np.abs(grid - (st_z[ipp]-cz)))
-        SIG_1D_x[iy, iz] += (VCM_x[iy, iz]-st_vx[ipp])**2
-        SIG_1D_y[ix, iz] += (VCM_y[ix, iz]-st_vy[ipp])**2
-        SIG_1D_z[ix, iy] += (VCM_z[ix, iy]-st_vz[ipp])**2
-
-    SIG_1D_x = np.sqrt(SIG_1D_x/quantas_x)
-    SIG_1D_y = np.sqrt(SIG_1D_y/quantas_y)
-    SIG_1D_z = np.sqrt(SIG_1D_z/quantas_z)
-
-
-
-    SIG_1D_x_05 = 0.
-    counter_x = 0.
-
-    SIG_1D_y_05 = 0.
-    counter_y = 0.
-
-    SIG_1D_z_05 = 0.
-    counter_z = 0.
-
-    for ip in range(Npart):
-        ipp = part_list[ip]
-        dx = cx - st_x[ipp]
-        dy = cy - st_y[ipp]
-        dz = cz - st_z[ipp]
-        ix = np.argmin(np.abs(grid - dx))
-        iy = np.argmin(np.abs(grid - dy))
-        iz = np.argmin(np.abs(grid - dz))
-        dist_x = (dy**2 + dz**2)**0.5
-        dist_y = (dx**2 + dz**2)**0.5
-        dist_z = (dx**2 + dy**2)**0.5
-
-        if dist_x < R05x:
-            SIG_1D_x_05 += SIG_1D_x[iy, iz]
-            counter_x += 1
-
-        if dist_y < R05y:
-            SIG_1D_y_05 += SIG_1D_x[ix, iz]
-            counter_y += 1
-
-        if dist_z < R05z:
-            SIG_1D_z_05 += SIG_1D_z[ix, iy]
-            counter_z += 1
-
-    ###########################################
-    #V/sigma and lambda part (Fast-Slow rotator)
-    ###########################################
-    sumVz = 0.
-    sumSigmaz = 0.
-    sumup_z = 0.
-    sumdown_z = 0.
-    for ix in range(n_cell):
-        for iy in range(n_cell):
-            Rbin = (grid[ix]**2 + grid[iy]**2)**0.5
-            if Rbin < R05z + 2*ll: #Tolerance of 1 cell
-                #vsigma
-                sumVz += VCM_z[ix, iy]**2 * SD_z[ix, iy]
-                sumSigmaz += SIG_1D_z[ix, iy]**2 * SD_z[ix, iy]
-                #lambda
-                sumup_z += SD_z[ix, iy] * Rbin * abs(VCM_z[ix, iy])
-                sumdown_z += SD_z[ix, iy] * Rbin * (VCM_z[ix, iy]**2 + SIG_1D_z[ix, iy]**2)**0.5
-
-    V_sigma_z = (sumVz/sumSigmaz)**0.5
-    lambda_z = sumup_z/sumdown_z
-
-    sumVy = 0.
-    sumSigmay = 0.
-    sumup_y = 0.
-    sumdown_y = 0.
-    for ix in range(n_cell):
-        for iz in range(n_cell):
-            Rbin = (grid[ix]**2 + grid[iz]**2)**0.5
-            if Rbin < R05y + 2*ll: #Tolerance of 1 cell
-                #vsigma
-                sumVy += VCM_y[ix, iz]**2 * SD_y[ix, iz]
-                sumSigmay += SIG_1D_y[ix, iz]**2 * SD_y[ix, iz]
-                #lambda
-                sumup_y += SD_y[ix, iz] * Rbin * abs(VCM_y[ix, iz])
-                sumdown_y += SD_y[ix, iz] * Rbin * (VCM_y[ix, iz]**2 + SIG_1D_y[ix, iz]**2)**0.5
-
-    V_sigma_y = (sumVy/sumSigmay)**0.5
-    lambda_y = sumup_y/sumdown_y
-
-    sumVx = 0.
-    sumSigmax = 0.
-    sumup_x = 0.
-    sumdown_x = 0.
-    for iy in range(n_cell):
-        for iz in range(n_cell):
-            Rbin = (grid[iy]**2 + grid[iz]**2)**0.5
-            if Rbin < R05x + 2*ll: #Tolerance of 1 cell
-                #vsigma
-                sumVx += VCM_x[iy, iz]**2 * SD_x[iy, iz]
-                sumSigmax += SIG_1D_x[iy, iz]**2 * SD_x[iy, iz]
-                #lambda
-                sumup_x += SD_x[iy, iz] * Rbin * abs(VCM_x[iy, iz])
-                sumdown_x += SD_x[iy, iz] * Rbin * (VCM_x[iy, iz]**2 + SIG_1D_x[iy, iz]**2)**0.5
-
-    V_sigma_x = (sumVx/sumSigmax)**0.5
-    lambda_x = sumup_x/sumdown_x
-
-    #AVERAGE
-    V_sigma = (V_sigma_x + V_sigma_y + V_sigma_z)/3.
-    lambda_ = (lambda_x + lambda_y + lambda_z)/3.
-
-    ###########################################
-    # RETURN
-    ###########################################
-    if counter_x > 0 and counter_y > 0 and counter_z > 0:
-        return SIG_1D_x_05/counter_x, SIG_1D_y_05/counter_y, SIG_1D_z_05/counter_z, V_sigma, lambda_
-    else:
-        return 0., 0., 0., 0., 0.
-    
-
-@njit(parallel = True)
-def avg_age_metallicity(part_list, st_age, st_met, st_mass, cosmo_time):
-    mass = 0.
-    avg_age = 0.
-    avg_age_mass = 0.
-    avg_met = 0.
-    avg_met_mass = 0.
-    Npart = len(part_list)
-    for ip in prange(Npart):
-        ipp = part_list[ip]
-        avg_age += (cosmo_time - st_age[ipp])
-        avg_age_mass += (cosmo_time - st_age[ipp])*st_mass[ipp]
-        avg_met += st_met[ipp]
-        avg_met_mass += st_met[ipp]*st_mass[ipp]
-        mass += st_mass[ipp]
-    
-    return avg_age/Npart, avg_age_mass/mass, avg_met/Npart, avg_met_mass/mass
-
-
-
-def halo_shape(part_list, st_x, st_y, st_z, st_mass, cx, cy, cz, RAD05):
-    # CALLS particles module routine to calculate the shape of a given particle list
-    x = st_x[part_list] - cx
-    y = st_y[part_list] - cy
-    z = st_z[part_list] - cz
-    m = st_mass[part_list]
-    r = RAD05
-    semiaxis, eigenvec = particles.ellipsoidal_shape_particles(x, y, z, m, r, tol=1e-3, maxiter=100, preserve='major', verbose=False)
-    if semiaxis is None:
-        return np.nan, np.nan, np.nan
-    else:
-        a = semiaxis[2]
-        b = semiaxis[1]
-        c = semiaxis[0]
-        return a, b, c
-
-
-
-def photutils_fit(R05, R05x, R05y, R05z, R_fit_min, R_fit_max, res, star_density_2D_xy, star_density_2D_xz, star_density_2D_yz):
-    ###################################################################################
-    #PHOTUTILS IS A PACKAGE THAT ALLOWS TO FIT ISOPHOTES TO A 2D IMAGE
-    #IT IS BASED ON THE ALGORITHM OF JEDRZEJEWSKI (1987) AND BENDINELLI ET AL. (1990)
-    #PROBLEM: CALCULATIONS DONE IN PYTHON, SO IT IS SLOW (BUT IT WORKS)
-    ###################################################################################
-
-    #FIRST, BUILD AN ELLIPSE MODEL
-    #x0, y0 --> CENTRE OF THE GALAXY in pixels
-    #sma --> semi-major axis in pixels
-    #eps --> ellipticity
-    #pa --> position angle of sma (in radians) relative to the x axis
-
-    sma = R05/res #FROM mpc to pixels
-    sma_xy = int(R05z/res)
-    sma_xz = int(R05y/res)
-    sma_yz = int(R05x/res)
-
-    sma_fit_min = R_fit_min/res
-    sma_fit_max = R_fit_max/res
-    sma_fit_0 = (sma_fit_min + sma_fit_max)/2.
-
-    argmax_xy = np.argmax(star_density_2D_xy)
-    x0_xy = np.unravel_index(argmax_xy, star_density_2D_xy.shape)[0]
-    y0_xy = np.unravel_index(argmax_xy, star_density_2D_xy.shape)[1]
-    geometry_xy = EllipseGeometry(x0 = x0_xy, y0 = y0_xy, sma = sma, eps = 0.3, pa = 45 / 180 * np.pi)
-
-    argmax_xz = np.argmax(star_density_2D_xz)
-    x0_xz = np.unravel_index(argmax_xz, star_density_2D_xz.shape)[0]
-    y0_xz = np.unravel_index(argmax_xz, star_density_2D_xz.shape)[1]
-    geometry_xz = EllipseGeometry(x0 = x0_xz, y0 = y0_xz, sma = sma, eps = 0.3, pa = 45 / 180 * np.pi)
-
-    argmax_yz = np.argmax(star_density_2D_yz)
-    x0_yz = np.unravel_index(argmax_yz, star_density_2D_yz.shape)[0]
-    y0_yz = np.unravel_index(argmax_yz, star_density_2D_yz.shape)[1]
-    geometry_yz = EllipseGeometry(x0 = x0_yz, y0 = y0_yz, sma = sma, eps = 0.3, pa = 45 / 180 * np.pi)
-    
-    # PLOT TO CHECK
-    # aper = EllipticalAperture((geometry_xy.x0, geometry_xy.y0), geometry_xy.sma,
-    #                         geometry_xy.sma * (1 - geometry_xy.eps),
-    #                         geometry_xy.pa)
-    # plt.imshow(star_density_2D_xy.T, origin='lower', cmap='viridis')
-    # aper.plot(color='white')
-    # plt.show()
-
-    #NOW FIT ---> MOST EXPENSIVE PART, THE MORE PIXELS, THE MORE TIME SPENT
-    #SERSIC PROFILE
-    def sersic(R, Re, Ie, n):
-        bn = 2*n - 1/3 + 4/(405*n)
-        return Ie*np.exp( -bn*( (R/Re)**(1/n) - 1 ) )
-    
-    minpoints = 10 # minimum number of points to fit
-    #XY PLANE
-    try:
-        ellipse_xy = Ellipse(star_density_2D_xy, geometry_xy)
-        isolist_xy = ellipse_xy.fit_image(minsma=sma_fit_min, maxsma=sma_fit_max, sma0 = sma_fit_0)
-        ellipticity_list_xy = isolist_xy.eps
-        intens_list_xy = isolist_xy.intens
-        sma_list_xy = isolist_xy.sma
-
-        #PLOT TO CHECK
-        # model_image = build_ellipse_model(star_density_2D_xy.shape, isolist_xy)
-        # plt.imshow(model_image.T)
-        # plt.show
-
-        if len(intens_list_xy) >= minpoints:
-            #FIT THE SERSIC INDEX
-            sma_list_xy = np.array(sma_list_xy)
-            intens_list_xy = np.array(intens_list_xy)
-            ellipticity_list_xy = np.array(ellipticity_list_xy)
-            #NOW, FIT
-            guess_xy = [sma, np.max(intens_list_xy), 1.]
-            param_xy, _ = curve_fit(sersic, sma_list_xy, intens_list_xy, p0 = guess_xy)
-            n_xy = param_xy[2]
-            #WE SELECT THE ELLIPTICITY OF THE CLOSEST ISOPHOTE TO THE HALF LIGHT RADIUS
-            eps_xy = ellipticity_list_xy[np.argmin(np.abs(sma_list_xy - sma_xy))]
-
-            # CHECK FIT
-            # plt.plot(sma_list_xy, intens_list_xy, 'o')
-            # plt.plot(sma_list_xy, sersic(sma_list_xy, param_xy[0], param_xy[1], param_xy[2]))
-            # plt.show()
-        else:
-            n_xy = np.nan
-            eps_xy = np.nan
-
-    except:
-        n_xy = np.nan
-        eps_xy = np.nan
-
-    #XZ PLANE
-    try:
-        ellipse_xz = Ellipse(star_density_2D_xz, geometry_xz)
-        isolist_xz = ellipse_xz.fit_image(minsma=sma_fit_min, maxsma=sma_fit_max, sma0 = sma_fit_0)
-        ellipticity_list_xz = isolist_xz.eps
-        intens_list_xz = isolist_xz.intens
-        sma_list_xz = isolist_xz.sma
-
-        #PLOT TO CHECK
-        # model_image = build_ellipse_model(star_density_2D_xz.shape, isolist_xz)
-        # plt.imshow(model_image.T)
-        # plt.show
-
-        if len(intens_list_xz) >= minpoints:
-            #FIT THE SERSIC INDEX
-            sma_list_xz = np.array(sma_list_xz)
-            intens_list_xz = np.array(intens_list_xz)
-            ellipticity_list_xz = np.array(ellipticity_list_xz)
-            #NOW, FIT
-            guess_xz = [sma, np.max(intens_list_xz), 1.]
-            param_xz, _ = curve_fit(sersic, sma_list_xz, intens_list_xz, p0 = guess_xz)
-            n_xz = param_xz[2]
-            #WE SELECT THE ELLIPTICITY OF THE CLOSEST ISOPHOTE TO THE HALF LIGHT RADIUS
-            eps_xz = ellipticity_list_xz[np.argmin(np.abs(sma_list_xz - sma_xz))]
-
-        else:
-            n_xz = np.nan
-            eps_xz = np.nan
-
-    except:
-        n_xz = np.nan
-        eps_xz = np.nan
-
-    #YZ PLANE
-    try:
-        ellipse_yz = Ellipse(star_density_2D_yz, geometry_yz)
-        isolist_yz = ellipse_yz.fit_image(minsma=sma_fit_min, maxsma=sma_fit_max, sma0 = sma_fit_0)
-        ellipticity_list_yz = isolist_yz.eps
-        intens_list_yz = isolist_yz.intens
-        sma_list_yz = isolist_yz.sma
-        
-        #PLOT TO CHECK
-        # model_image = build_ellipse_model(star_density_2D_yz.shape, isolist_yz)
-        # plt.imshow(model_image.T)
-        # plt.show
-
-        if len(intens_list_yz) >= minpoints:
-            #FIT THE SERSIC INDEX
-            sma_list_yz = np.array(sma_list_yz)
-            intens_list_yz = np.array(intens_list_yz)
-            ellipticity_list_yz = np.array(ellipticity_list_yz)
-            #NOW, FIT
-            guess_yz = [sma, np.max(intens_list_yz), 1.]
-            param_yz, _ = curve_fit(sersic, sma_list_yz, intens_list_yz, p0 = guess_yz)
-            n_yz = param_yz[2]
-            #WE SELECT THE ELLIPTICITY OF THE CLOSEST ISOPHOTE TO THE HALF LIGHT RADIUS
-            eps_yz = ellipticity_list_yz[np.argmin(np.abs(sma_list_yz - sma_yz))]
-
-        else:
-            n_yz = np.nan
-            eps_yz = np.nan
-
-    except:
-        n_yz = np.nan
-        eps_yz = np.nan
-
-    #NOW, WE COMPUTE THE AVERAGE SERSIC INDEX AND ELLIPTICITY
-    n = np.nanmean([n_xy, n_xz, n_yz]) #average ignoring nans
-    eps = np.nanmean([eps_xy, eps_xz, eps_yz]) #average ignoring nans
-
-    return n, eps
-
-
-def pyimfit_fit(R05x, R05y, R05z, res, star_density_2D_xy, star_density_2D_xz, star_density_2D_yz):
-    ########################################################################################################
-    # PyImfit is a Python wrapper around the (C++-based) image-fitting program Imfit (Erwin 2015)
-    #
-    # Calculations are done in C++, thus it is much faster than photutils, specially for 
-    # images with a low number of pixels like the ones from cosmological simulations (e.g. ~128x128 at most)
-    ########################################################################################################
-
-    #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!      WARNING         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    # Imfit was written to follow the standard 2D array indexing conventions of FITS, IRAF, and (e.g.) 
-    # SAOimage DS9, which are 1-based and column-major. This means that the center of the first pixel (in the lower-left of the image) 
-    # has coordinates (x,y) = (1.0,1.0); the lower-left corner of that pixel has coordinates (0.5,0.5), 
-    # and the upper-right corner of the same pixel is at (1.5,1.5). The first coordinate (“x”) is the column number; 
-    # the second (“y”) is the row number.
-
-    # To allow one to use Imfit configuration files with PyImfit, PyImfit adopts the same column-major, 1-based indexing standard. 
-    # The most obvious way this shows up is in the X0,Y0 coordinates for the centers of function sets.
-
-    #Python (and in particular NumPy), on the other hand, is 0-based and row-major. This means that the first pixel 
-    # in the image is at (0,0); it also means that the first index is the row number.
-
-    #To translate coordinate systems, remember that a pixel with Imfit/PyImfit coordinates 
-    # x,y would be found in a NumPy array at array[y0 - 1, x0 - 1].
-    #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-
-    #CREATE A GALAXY MODEL FOR EACH PLANE
-
-    #x0, y0 --> CENTRE OF THE GALAXY in pixels
-    #sma --> semi-major axis in pixels
-    #eps --> ellipticity
-    #pa --> position angle of sma (in radians) relative to the x axis
-
-    def galaxy_model(x0, y0, pa, eps, n, I_e, r_e, Imax):
-        model = pyimfit.SimpleModelDescription()
-        model.x0.setValue(x0, [x0-10, x0+10]) #x0 and y0 are the centre of the galaxy
-        model.y0.setValue(y0, [y0-10, y0+10]) #It is important not to give too much freedom to the centre of the galaxy !!!!
-        galaxy_profile = pyimfit.make_imfit_function('Sersic') 
-        galaxy_profile.PA.setValue(pa, [0, 180]) #position angle of the semi-major axis
-        galaxy_profile.ell.setValue(eps, [0, 1]) #ellipticity
-        galaxy_profile.n.setValue(n, [0.5, 5]) #sersic index
-        galaxy_profile.I_e.setValue(I_e, [0., Imax]) #surface brightness at the effective radius
-        galaxy_profile.r_e.setValue(r_e, [0.5*r_e, 1.5*r_e]) #effective radius
-        model.addFunction(galaxy_profile)
-        return model
-
-    sma_xy = int(R05z/res)
-    sma_xz = int(R05y/res)
-    sma_yz = int(R05x/res)
-
-    #xy plane
-    argmax_xy = np.argmax(star_density_2D_xy)
-    x0_xy = np.unravel_index(argmax_xy, star_density_2D_xy.shape)[1] + 1
-    y0_xy = np.unravel_index(argmax_xy, star_density_2D_xy.shape)[0] + 1
-    I_e_xy = 0.01*np.max(star_density_2D_xy)
-    model_desc_xy = galaxy_model(x0 = x0_xy, y0 = y0_xy, pa = 95., eps = 0.3, 
-                                    n = 1., I_e = I_e_xy, r_e = sma_xy,
-                                    Imax = np.max(star_density_2D_xy))
-    
-    #xz plane
-    argmax_xz = np.argmax(star_density_2D_xz)
-    x0_xz = np.unravel_index(argmax_xz, star_density_2D_xz.shape)[1] + 1
-    y0_xz = np.unravel_index(argmax_xz, star_density_2D_xz.shape)[0] + 1
-    I_e_xz = 0.01*np.max(star_density_2D_xz)
-    model_desc_xz = galaxy_model(x0 = x0_xz, y0 = y0_xz, pa = 95., eps = 0.3,
-                                    n = 1., I_e = I_e_xz, r_e = sma_xz,
-                                    Imax = np.max(star_density_2D_xz))    
-    #yz plane
-    argmax_yz = np.argmax(star_density_2D_yz)
-    x0_yz = np.unravel_index(argmax_yz, star_density_2D_yz.shape)[1] + 1
-    y0_yz = np.unravel_index(argmax_yz, star_density_2D_yz.shape)[0] + 1
-    I_e_yz = 0.01*np.max(star_density_2D_yz)
-    model_desc_yz = galaxy_model(x0 = x0_yz, y0 = y0_yz, pa = 95., eps = 0.3,
-                                    n = 1., I_e = I_e_yz, r_e = sma_yz,
-                                    Imax = np.max(star_density_2D_yz))
-    
-    #CREATE THE FITTER OBJECTS
-    imfitter_xy = pyimfit.Imfit(model_desc_xy)
-    imfitter_xz = pyimfit.Imfit(model_desc_xz)
-    imfitter_yz = pyimfit.Imfit(model_desc_yz)
-
-    #ELIMINATE ZEROES (NOT ALLOWED BY IMFIT), REPLACE THEM WITH NANs, WHICH ARE IGNORED BY IMFIT
-    star_density_2D_xy_flat = star_density_2D_xy.flatten()
-    star_density_2D_xy_flat[star_density_2D_xy_flat == 0] = np.nan
-    star_density_2D_xy = star_density_2D_xy_flat.reshape(star_density_2D_xy.shape)
-
-    star_density_2D_xz_flat = star_density_2D_xz.flatten()
-    star_density_2D_xz_flat[star_density_2D_xz_flat == 0] = np.nan
-    star_density_2D_xz = star_density_2D_xz_flat.reshape(star_density_2D_xz.shape)
-
-    star_density_2D_yz_flat = star_density_2D_yz.flatten()
-    star_density_2D_yz_flat[star_density_2D_yz_flat == 0] = np.nan
-    star_density_2D_yz = star_density_2D_yz_flat.reshape(star_density_2D_yz.shape)
-
-    #LOAD THE DATA
-    imfitter_xy.loadData(star_density_2D_xy)
-    imfitter_xz.loadData(star_density_2D_xz)
-    imfitter_yz.loadData(star_density_2D_yz)
-
-    #FIT
-    solver = 'LM' #'LM' (faster but can be trapped in local minimum), 'NM' (Slower, but more robust)
-    
-    try:
-        result_xy = imfitter_xy.doFit(solver = solver)
-        converged_xy = result_xy.fitConverged
-        bestfit_parameters_xy = result_xy.params
-    except:
-        converged_xy = False
-        bestfit_parameters_xy = np.nan
-
-    try:
-        result_xz = imfitter_xz.doFit(solver = solver)
-        converged_xz = result_xz.fitConverged
-        bestfit_parameters_xz = result_xz.params
-    except:
-        converged_xz = False
-        bestfit_parameters_xz = np.nan
-
-    try:
-        result_yz = imfitter_yz.doFit(solver = solver)
-        converged_yz = result_yz.fitConverged
-        bestfit_parameters_yz = result_yz.params
-    except:
-        converged_yz = False
-        bestfit_parameters_yz = np.nan
-
-    # GET SERSIC INDEX AND ELLIPTICITY
-    # --> ORDER OF PARAMETERS (Sérsic profile): x0, y0, PA, ell, n, I_e, r_e
-    if converged_xy:
-        n_xy = bestfit_parameters_xy[4]
-        eps_xy = bestfit_parameters_xy[3]
-    else:
-        n_xy = np.nan
-        eps_xy = np.nan
-
-    if converged_xz:
-        n_xz = bestfit_parameters_xz[4]
-        eps_xz = bestfit_parameters_xz[3]
-    else:
-        n_xz = np.nan
-        eps_xz = np.nan
-
-    if converged_yz:
-        n_yz = bestfit_parameters_yz[4]
-        eps_yz = bestfit_parameters_yz[3]
-    else:
-        n_yz = np.nan
-        eps_yz = np.nan
-
-    # PLOT
-    # bestfit_model_im_xy = imfitter_xy.getModelImage() #2D array
-    # bestfit_model_im_xz = imfitter_xz.getModelImage()
-    # bestfit_model_im_yz = imfitter_yz.getModelImage()
-    # Imshow
-    # fig, ax = plt.subplots(1, 3, figsize = (15, 5))
-    # ax[0].imshow(bestfit_model_im_xy.T)
-    # ax[1].imshow(bestfit_model_im_xz.T)
-    # ax[2].imshow(bestfit_model_im_yz.T)
-    # plt.show()
-
-    #NOW, WE COMPUTE THE AVERAGE SERSIC INDEX AND ELLIPTICITY
-    n = np.nanmean([n_xy, n_xz, n_yz]) #average ignoring nans
-    eps = np.nanmean([eps_xy, eps_xz, eps_yz]) #average ignoring nans
-
-    return n, eps
-
-
-
-def sersic_fit(R05, R05x, R05y, R05z, R_fit_min, R_fit_max, res, star_density_2D_xy, star_density_2D_xz, star_density_2D_yz, fit_mode = 'photutils'):
-    #ERROR CONTROL    
-    fit_modes = ['photutils', 'pyimfit']
-    if fit_mode not in fit_modes:
-        raise ValueError('mode must be one of %r.' % fit_modes)
-    ###########################################################
-
-    #FIT
-    if fit_mode == 'photutils':
-        n, eps = photutils_fit(R05, R05x, R05y, R05z, R_fit_min, R_fit_max, res, star_density_2D_xy, star_density_2D_xz, star_density_2D_yz)
-
-    # NOT WORKING YET
-    if fit_mode == 'pyimfit':
-        n, eps = pyimfit_fit(R05x, R05y, R05z, res, star_density_2D_xy, star_density_2D_xz, star_density_2D_yz)
-        
-    return n, eps
-
-
-def sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05, R05x, R05y, R05z):
-    # In order to capture correctyle the slope of the profile, we need to fit between
-    # the right radius. This is because the profile s not a perfect sersic, and it 
-    # has a bump (or flattening) at the center and in the outer regions the
-    # profile is not well defined.
-
-    R_fit_min = 0.
-    R_fit_max = 1.5*R05
-
-    #ONLY CONSIDER PARTICLES WITHIN R_sersic
-    x_pos = st_x[part_list]
-    y_pos = st_y[part_list]
-    z_pos = st_z[part_list]
-    R_pos = ((x_pos-cx)**2 + (y_pos-cy)**2 + (z_pos-cz)**2)**0.5
-
-    part_list = part_list[R_pos < R_fit_max]
-    x_pos = x_pos[R_pos < R_fit_max]
-    y_pos = y_pos[R_pos < R_fit_max]
-    z_pos = z_pos[R_pos < R_fit_max]
-
-    # NOW CONVERT TO POSITIONS BETWEEN 0, 2*R_sersic, f4(float32)
-    x_pos = np.float32(x_pos - cx + R_fit_max) # kpc
-    y_pos = np.float32(y_pos - cy + R_fit_max)
-    z_pos = np.float32(z_pos - cz + R_fit_max)
-
-    #DEFINING THE GRID
-    partNum = np.int32(len(part_list))
-    L_box = np.float32(2*R_fit_max) #kpc
-    res = np.float32(      ll     )  # IMPORTANT!!!! RESOLUTION OF THE GRID FOR THE SERSIC INDEX
-                                       # IT SHOULD BE -->LL<--, BUT SMALL GALAXIES ARE A PROBLEM
-                                       # BIGGEST GALAXIES ARE NOT A PROBLEM, SINCE THERE IS A MAXIMUM NUMBER OF CELLS
-                                       # SEE BELOW
-    ncell = np.int32(min( max(L_box/res, 32), 64) )
-    res = np.float32(L_box/ncell)   # RECALCULATE RES IN CASE I CHANGED IT
-    kneigh = np.int32(16) # h distance in SPH kernel is calculated as the distance to the "kneigh" nearest neighbour
-                          # the higher the kneigh value, the more time it will take
-    # CALL FORTRAN 
-    field = np.ones(partNum, dtype = np.float32) #CONSIDER ALL PARTICLES AS EQUALLY MASSIVE
-    star_density_3D, _ = sph3D.sph.main(x_pos, y_pos, z_pos, L_box, L_box, L_box, field, kneigh, ncell, ncell, ncell, partNum)
-    
-    #NOW, SURFACE DENSITY IN EACH PLANE
-    star_density_2D_xy = np.mean(star_density_3D, axis = 2)
-    star_density_2D_xz = np.mean(star_density_3D, axis = 1)
-    star_density_2D_yz = np.mean(star_density_3D, axis = 0)
-
-    ##################################################################################################
-    #EXTRAPOLATION TO GET A BETTER RESOLUTION, with scipy.regular_grid_interpolator
-    # grid_faces = np.linspace(0, L_box, ncell+1)
-    # grid_centers = (grid_faces[1:] + grid_faces[:-1])/2.
-
-    # interp_xy = RegularGridInterpolator((grid_centers, grid_centers), star_density_2D_xy, bounds_error=False, fill_value=None, method = 'linear')
-    # interp_xz = RegularGridInterpolator((grid_centers, grid_centers), star_density_2D_xz, bounds_error=False, fill_value=None, method = 'linear')
-    # interp_yz = RegularGridInterpolator((grid_centers, grid_centers), star_density_2D_yz, bounds_error=False, fill_value=None, method = 'linear')
-
-    # n_extrapolate = 256
-    # res = L_box/n_extrapolate
-    # grid_faces_finner = np.linspace(0, L_box, n_extrapolate+1)
-    # grid_centers_finner = (grid_faces_finner[1:] + grid_faces_finner[:-1])/2.
-    # X, Y = np.meshgrid(grid_centers_finner, grid_centers_finner)
-
-    # star_density_2D_xy = interp_xy((X, Y))
-    # star_density_2D_xz = interp_xz((X, Y))
-    # star_density_2D_yz = interp_yz((X, Y))
-
-    # APPLYING A GAUSSIAN FILTER TO SMOOTH THE SURFACE DENSITY
-    # sfilter = 2.
-    # star_density_2D_xy = gaussian_filter(star_density_2D_xy, sigma = sfilter)
-    # star_density_2D_xz = gaussian_filter(star_density_2D_xz, sigma = sfilter)
-    # star_density_2D_yz = gaussian_filter(star_density_2D_yz, sigma = sfilter)
-
-    # PLOT
-    # fig, ax = plt.subplots(1, 3, figsize = (15, 5))
-    # ax[0].imshow(star_density_2D_xy.T, origin = 'lower')
-    # ax[1].imshow(star_density_2D_xz.T, origin = 'lower')
-    # ax[2].imshow(star_density_2D_yz.T, origin = 'lower')
-    # plt.show()
-
-    #FITTING THE SERSIC PROFILE
-    n, eps = sersic_fit(R05, R05x, R05y, R05z, R_fit_min, R_fit_max, res, star_density_2D_xy, star_density_2D_xz, star_density_2D_yz, fit_mode = 'photutils')
-
-    return n, eps
-
-
-@njit
-def simple_fit(R_list_centers, dR, x_pos, y_pos, z_pos):
-    Nc = len(R_list_centers)
-    npart = len(x_pos)
-    surface_density_xy = np.zeros(Nc)
-    surface_density_xz = np.zeros(Nc)
-    surface_density_yz = np.zeros(Nc)
-    #Find surface number density profile in each projection XY, XZ, YZ
-    for ip in range(npart):
-        r_xy = np.sqrt(x_pos[ip]**2 + y_pos[ip]**2)
-        r_xz = np.sqrt(x_pos[ip]**2 + z_pos[ip]**2)
-        r_yz = np.sqrt(y_pos[ip]**2 + z_pos[ip]**2)
-        
-        #search radial bin
-        iR_xy = int(r_xy/dR)
-        iR_xz = int(r_xz/dR)
-        iR_yz = int(r_yz/dR)
-
-        #update surface density
-        if iR_xy < Nc:
-            surface_density_xy[iR_xy] += 1.
-        if iR_xz < Nc:
-            surface_density_xz[iR_xz] += 1.
-        if iR_yz < Nc:
-            surface_density_yz[iR_yz] += 1.
-
-    #normalize
-    surface_density_xy /= (2.*np.pi*R_list_centers*dR)
-    surface_density_xz /= (2.*np.pi*R_list_centers*dR)
-    surface_density_yz /= (2.*np.pi*R_list_centers*dR)
-
-    return surface_density_xy, surface_density_xz, surface_density_yz
-
-
-
-def simple_sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05):
-    ##################################################################################################
-    # THIS FUNCTION COMPUTES THE SERSIC INDEX OF THE STELLAR HALO ASSUMING CONTOURS ARE CIRCULAR.
-    # IT COUNTS THE NUMBER OF PARTICLES IN RADIAL BINS AND FITS A SERSIC PROFILE TO THE SURFACE DENSITY
-    # PROFILE. 
-    #
-    # n IS SENSITIVE TO Nc, THE NUMBER OF RADIAL BINS. IT SHOULD DEPEND ON RESOLUTION AND HALO SIZE.
-    #
-    # FUTURE IMPROVEMENTS: CONTOURS ARE NOT CIRCULAR, BUT ELLIPTICAL. THE SERSIC INDEX SHOULD BE
-    # COMPUTED IN ELLIPTICAL BINS. THIS IS NOT IMPLEMENTED YET.
-    ##################################################################################################
-
-    #RADIAL LIMITS
-    R_fit_min = 0.
-    R_fit_max = 2.*R05
-
-    #ONLY CONSIDER PARTICLES WITHIN R_fit_min and R_fit_max
-    x_pos = st_x[part_list]-cx
-    y_pos = st_y[part_list]-cy
-    z_pos = st_z[part_list]-cz
-    R_pos = ((x_pos)**2 + (y_pos)**2 + (z_pos)**2)**0.5
-
-    part_list = part_list[R_pos < R_fit_max]
-    x_pos = x_pos[R_pos < R_fit_max]
-    y_pos = y_pos[R_pos < R_fit_max]
-    z_pos = z_pos[R_pos < R_fit_max]
-    R_pos = ((x_pos)**2 + (y_pos)**2 + (z_pos)**2)**0.5
-
-    part_list = part_list[R_pos > R_fit_min]
-    x_pos = x_pos[R_pos > R_fit_min]
-    y_pos = y_pos[R_pos > R_fit_min]
-    z_pos = z_pos[R_pos > R_fit_min]
-    R_pos = ((x_pos)**2 + (y_pos)**2 + (z_pos)**2)**0.5
-
-    #RADIAL BINNING
-    Nc = 10 # number of "contours", radial bins
-    R_list, dR = np.linspace(R_fit_min, R_fit_max, Nc + 1, retstep = True)
-    R_list_centers = (R_list[1:] + R_list[:-1])/2.
-
-    surface_density_xy, surface_density_xz, surface_density_yz = simple_fit(R_list_centers, dR, x_pos, y_pos, z_pos)
-
-    # APPLYING A GAUSSIAN FILTER TO SMOOTH THE SURFACE DENSITY
-    surface_density_xy = gaussian_filter(surface_density_xy, sigma = 0.5)
-    surface_density_xz = gaussian_filter(surface_density_xz, sigma = 0.5)
-    surface_density_yz = gaussian_filter(surface_density_yz, sigma = 0.5)
-
-    # FIT THE TAIL: FROM SUPREME TO R_fit_max
-    # FIND THE PEAK OF THE SURFACE DENSITY
-    iRmax = np.argmax(surface_density_xy)
-    R_list_centers = R_list_centers[iRmax:]
-    surface_density_xy = surface_density_xy[iRmax:]
-    surface_density_xz = surface_density_xz[iRmax:]
-    surface_density_yz = surface_density_yz[iRmax:]
-
-    #FITTING THE SERSIC PROFILE
-    def sersic(R, Re, Ie, n):
-        bn = 2*n - 1/3 + 4/(405*n)
-        return Ie*np.exp( -bn*( (R/Re)**(1/n) - 1 ) )
-
-    guess_xy = [R05, surface_density_xy[0], 1.]
-    guess_xz = [R05, surface_density_xz[0], 1.]
-    guess_yz = [R05, surface_density_yz[0], 1.]
-
-    #FIT XY
-    try:
-        param_xy, _ = curve_fit(sersic, R_list_centers, surface_density_xy, p0 = guess_xy)
-        n_xy = param_xy[2]
-    except:
-        n_xy = np.nan
-
-    #FIT XZ
-    try:
-        param_xz, _ = curve_fit(sersic, R_list_centers, surface_density_xz, p0 = guess_xz)
-        n_xz = param_xz[2]
-    except:
-        n_xz = np.nan
-
-    #FIT YZ
-    try:
-        param_yz, _ = curve_fit(sersic, R_list_centers, surface_density_yz, p0 = guess_yz)
-        n_yz = param_yz[2]
-    except:
-        n_yz = np.nan
-
-    #CHECK UNUSUAL VALUES OF n
-    if n_xy < 0.2 or n_xy > 10.:
-        n_xy = np.nan
-    if n_xz < 0.2 or n_xz > 10.:
-        n_xz = np.nan
-    if n_yz < 0.2 or n_yz > 10.:
-        n_yz = np.nan
-
-    # PLOT THE 3 FITS TO CHECK, IF THEY SUCCEDED
-    # print('n_xy = ', n_xy)
-    # print('n_xz = ', n_xz)
-    # print('n_yz = ', n_yz)
-    # fig, ax = plt.subplots(1, 3, figsize = (15, 5))
-    # ax[0].plot(R_list_centers, surface_density_xy, 'k.')
-    # if not np.isnan(n_xy):
-    #     ax[0].plot(R_list_centers, sersic(R_list_centers, *param_xy), 'r--')
-    # ax[0].set_title('XY')
-
-    # ax[1].plot(R_list_centers, surface_density_xz, 'k.')
-    # if not np.isnan(n_xz):
-    #     ax[1].plot(R_list_centers, sersic(R_list_centers, *param_xz), 'r--')
-    # ax[1].set_title('XZ')
-
-    # ax[2].plot(R_list_centers, surface_density_yz, 'k.')
-    # if not np.isnan(n_yz):
-    #     ax[2].plot(R_list_centers, sersic(R_list_centers, *param_yz), 'r--')
-    # ax[2].set_title('YZ')
-    # plt.show()
-
-    # NANMEAN
-    n = np.nanmean([n_xy, n_xz, n_yz])
-    return n
 
 
 def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halma_catalogue_from_PYFOF.res'):
@@ -1470,37 +243,51 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
     print('Cosmo time (Gyr):', cosmo_time*units.time_to_yr/1e9)
     print('Redshift (z):', zeta)
 
-    # #READ GAS IF RPS
-    # if rps_flag:
-    #     print('RPS == True !!!! ')
-    #     print('     Opening grid and clus files')
+    #READ GAS IF RPS
+    if rps_flag:
+        print('RPS == True !!!! ')
+        print('     Opening grid, clus and DM files')
 
-    #     grid_data = read_masclet.read_grids(iteration, path=path_results, parameters_path=path_results, digits=5, 
-    #                                                 read_general=True, read_patchnum=True, read_dmpartnum=False,
-    #                                                 read_patchcellextension=True, read_patchcellposition=True, read_patchposition=True,
-    #                                                 read_patchparent=False)
-    #     nl = grid_data[2]
-    #     npatch = grid_data[5] #number of patches in each level, starting in l=0
-    #     patchnx = grid_data[6] #patchnx (...): x-extension of each patch (in level l cells) (and Y and Z)
-    #     patchny = grid_data[7]
-    #     patchnz = grid_data[8]
-    #     patchrx = grid_data[12] #patchrx (...): physical position of the center of each patch first ¡l-1! cell (and Y and Z)
-    #     patchry = grid_data[13] # in Mpc
-    #     patchrz = grid_data[14]
+        #READ GRID
+        grid_data = read_masclet.read_grids(iteration, path=path_results, parameters_path=path_results, digits=5, 
+                                                    read_general=True, read_patchnum=True, read_dmpartnum=False,
+                                                    read_patchcellextension=True, read_patchcellposition=True, read_patchposition=True,
+                                                    read_patchparent=False)
+        # nl = grid_data[2]
+        # npatch = grid_data[5] #number of patches in each level, starting in l=0
+        # patchnx = grid_data[6] #patchnx (...): x-extension of each patch (in level l cells) (and Y and Z)
+        # patchny = grid_data[7]
+        # patchnz = grid_data[8]
+        # patchrx = grid_data[12] #patchrx (...): physical position of the center of each patch first ¡l-1! cell (and Y and Z)
+        # patchry = grid_data[13] # in Mpc
+        # patchrz = grid_data[14]
 
-    #     gas_data = read_masclet.read_clus(iteration, path=path_results, parameters_path=path_results, digits=5, max_refined_level=1000, output_delta=True, 
-    #                                       output_v=True, output_pres=False, output_pot=True, output_opot=False, output_temp=True, output_metalicity=False,
-    #                                       output_cr0amr=True, output_solapst=True, is_mascletB=False, output_B=False, is_cooling=True, verbose=False)
+        #READ CLUS
+        gas_data = read_masclet.read_clus(iteration, path=path_results, parameters_path=path_results, digits=5, max_refined_level=1000, output_delta=True, 
+                                          output_v=True, output_pres=False, output_pot=True, output_opot=False, output_temp=True, output_metalicity=False,
+                                          output_cr0amr=True, output_solapst=True, is_mascletB=False, output_B=False, is_cooling=True, verbose=False)
 
-    #     gas_delta = gas_data[0]
-    #     gas_density = misctools.delta_to_rho(gas_delta)
-    #     gas_cr0amr = gas_data[1]
-    #     gas_solapst = gas_data[2]
-    #     gas_vx = gas_data[3]*3e5 #in km/s
-    #     gas_vy = gas_data[4]*3e5 #in km/s
-    #     gas_vz = gas_data[5]*3e5 #in km/s
-    #     gas_pot = gas_data[6]
-    #     gas_temp = gas_data[7]
+        # gas_delta = gas_data[0]
+        # gas_density = misctools.delta_to_rho(gas_delta)
+        # gas_cr0amr = gas_data[1]
+        # gas_solapst = gas_data[2]
+        # gas_vx = gas_data[3]*3e5 #in km/s
+        # gas_vy = gas_data[4]*3e5 #in km/s
+        # gas_vz = gas_data[5]*3e5 #in km/s
+        # gas_pot = gas_data[6]
+        # gas_temp = gas_data[7]
+
+        #READ DM
+        masclet_dm_data = read_masclet.read_cldm(iteration, path = path_results, parameters_path=path_results, 
+                                                    digits=5, max_refined_level=1000, output_deltadm = False,
+                                                    output_position=True, output_velocity=False, output_mass=True)
+        # dm_x = masclet_dm_data[0]
+        # dm_y = masclet_dm_data[1]
+        # dm_z = masclet_dm_data[2]
+        # dm_mass = masclet_st_data[3]*units.mass_to_sun #in Msun
+        
+    else:
+        continue
 
     masclet_st_data = read_masclet.read_clst(iteration, path = path_results, parameters_path=path_results, 
                                                     digits=5, max_refined_level=1000, 
@@ -1550,10 +337,10 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         new_groups = []
         for ihal in tqdm(range(len(groups))):
             part_list = np.array(groups[ihal])
-            cx, cy, cz, M = center_of_mass(part_list, st_x, st_y, st_z, st_mass)
+            cx, cy, cz, M = halo_properties.center_of_mass(part_list, st_x, st_y, st_z, st_mass)
             M0 = M
             #Create 3D grid with cellsize 2*LL for cleaning
-            RRHH = furthest_particle(cx, cy, cz, part_list, st_x, st_y, st_z)
+            RRHH = halo_properties.furthest_particle(cx, cy, cz, part_list, st_x, st_y, st_z)
             grid = np.arange(-(RRHH+ll), RRHH+ll, 2*ll)
             n_cell = len(grid)
             vcm_cell = np.zeros((n_cell, n_cell, n_cell, 3))
@@ -1561,11 +348,12 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
             quantas_cell = np.zeros((n_cell, n_cell, n_cell))
             sig3D_cell = np.zeros((n_cell, n_cell, n_cell))
             #CALCULATE cell quantities
-            vcm_cell, mass_cell, quantas_cell, sig3D_cell = calc_cell(cx, cy, cz, grid, part_list, st_x, st_y, st_z, st_vx, st_vy, 
-                                                                    st_vz, st_mass, vcm_cell, mass_cell, quantas_cell, sig3D_cell)
+            vcm_cell, mass_cell, quantas_cell, sig3D_cell = halo_properties.calc_cell(cx, cy, cz, grid, part_list, st_x, st_y, st_z, st_vx, st_vy, 
+                                                                                st_vz, st_mass, vcm_cell, mass_cell, quantas_cell, sig3D_cell)
             
             #DO THE CLEANING: Right CM, Mass and Furthest particle
-            cx, cy, cz, M, RRHH, control = clean_cell(cx, cy, cz, M, RRHH, grid, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, vcm_cell, mass_cell, quantas_cell, sig3D_cell, ll, q_fil, sig_fil)
+            cx, cy, cz, M, RRHH, control = halo_properties.clean_cell(cx, cy, cz, M, RRHH, grid, part_list, st_x, st_y, st_z, st_vx, st_vy, 
+                                                                      st_vz, st_mass, vcm_cell, mass_cell, quantas_cell, sig3D_cell, ll, q_fil, sig_fil)
             #vx, vy, vz = CM_velocity(M, part_list[control.astype(bool)], st_vx, st_vy, st_vz, st_mass)
             #FASTER CLEANING --> ESCAPE VELOCITY IN ITS POSITION, CONSIDERING MASS WITHOUT CLEANING M0 and SPHERICAL SIMMETRY
             # factor_v = 4
@@ -1573,8 +361,8 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
             #CLEANING DONE
             control = control.astype(bool)
             npart = len(part_list[control])
-            cx, cy, cz, M = center_of_mass(part_list[control], st_x, st_y, st_z, st_mass)
-            RRHH = furthest_particle(cx, cy, cz, part_list[control], st_x, st_y, st_z)
+            cx, cy, cz, M = halo_properties.center_of_mass(part_list[control], st_x, st_y, st_z, st_mass)
+            RRHH = halo_properties.furthest_particle(cx, cy, cz, part_list[control], st_x, st_y, st_z)
             if npart > minp:
                 CX.append(cx)
                 CY.append(cy)
@@ -1630,30 +418,30 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         SERSIC = np.zeros(NHAL)
         for ihal in tqdm(range(NHAL)):
             part_list = new_groups[ihal]
-            PEAKX[ihal], PEAKY[ihal], PEAKZ[ihal] = density_peak(part_list, st_x, st_y, st_z, st_mass)
+            PEAKX[ihal], PEAKY[ihal], PEAKZ[ihal] = halo_properties.density_peak(part_list, st_x, st_y, st_z, st_mass, ll)
             cx = PEAKX[ihal]
             cy = PEAKY[ihal]
             cz = PEAKZ[ihal]
             M = MM[ihal]
-            RAD05[ihal] = half_mass_radius(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass)
-            RAD05_x[ihal], RAD05_y[ihal], RAD05_z[ihal] = half_mass_radius_proj(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass)
-            VX[ihal], VY[ihal], VZ[ihal] = CM_velocity(M, part_list, st_vx, st_vy, st_vz, st_mass)
-            V_TF[ihal] = tully_fisher_velocity(part_list, cx, cy, cz, st_x, st_y, st_z, VX[ihal], VY[ihal], VZ[ihal], st_vx, st_vy, st_vz, st_mass, RAD05[ihal])
-            JX[ihal], JY[ihal], JZ[ihal] = angular_momentum(M, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, cx, cy, cz, VX[ihal], VY[ihal], VZ[ihal])
+            RAD05[ihal] = halo_properties.half_mass_radius(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass)
+            RAD05_x[ihal], RAD05_y[ihal], RAD05_z[ihal] = halo_properties.half_mass_radius_proj(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass)
+            VX[ihal], VY[ihal], VZ[ihal] = halo_properties.CM_velocity(M, part_list, st_vx, st_vy, st_vz, st_mass)
+            V_TF[ihal] = halo_properties.tully_fisher_velocity(part_list, cx, cy, cz, st_x, st_y, st_z, VX[ihal], VY[ihal], VZ[ihal], st_vx, st_vy, st_vz, st_mass, RAD05[ihal])
+            JX[ihal], JY[ihal], JZ[ihal] = halo_properties.angular_momentum(M, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, cx, cy, cz, VX[ihal], VY[ihal], VZ[ihal])
             J[ihal] = (JX[ihal]**2 + JY[ihal]**2 + JZ[ihal]**2)**0.5
-            SAXISMAJOR[ihal], SAXISINTERMEDIATE[ihal], SAXISMINOR[ihal] = halo_shape(part_list, st_x, st_y, st_z, st_mass, cx, cy, cz, RAD05[ihal])
+            SAXISMAJOR[ihal], SAXISINTERMEDIATE[ihal], SAXISMINOR[ihal] = halo_properties.halo_shape(part_list, st_x, st_y, st_z, st_mass, cx, cy, cz, RAD05[ihal])
             #CARE HERE, RMAX IS CALCULATED WITH RESPECT TO THE CENTER OF MASS, NOT THE DENSITY PEAK
             # and RAD05 is calculated with respect to the density peak
-            if sersic_flag:
-                SERSIC[ihal] = simple_sersic_index(part_list, st_x, st_y, st_z, CX[ihal], CY[ihal], CZ[ihal], RAD05[ihal])
+            SERSIC[ihal] = halo_properties.simple_sersic_index(part_list, st_x, st_y, st_z, CX[ihal], CY[ihal], CZ[ihal], RAD05[ihal])
             if it_count > 0:
-                MSFR[ihal] = star_formation(part_list, st_mass, st_age, cosmo_time*units.time_to_yr/1e9, dt)
+                MSFR[ihal] = halo_properties.star_formation(part_list, st_mass, st_age, cosmo_time*units.time_to_yr/1e9, dt)
 
-            SIG_3D[ihal] = sigma_effective(part_list, RAD05[ihal], st_x, st_y, st_z, st_vx, st_vy, st_vz, cx, cy, cz, VX[ihal], VY[ihal], VZ[ihal])
+            SIG_3D[ihal] = halo_properties.sigma_effective(part_list, RAD05[ihal], st_x, st_y, st_z, st_vx, st_vy, st_vz, cx, cy, cz, VX[ihal], VY[ihal], VZ[ihal])
             grid = np.arange(-(RMAX[ihal]+ll), RMAX[ihal]+ll, 2*ll) #centers of the cells
             n_cell = len(grid)
-            SIG_1D_x[ihal], SIG_1D_y[ihal], SIG_1D_z[ihal], VSIGMA[ihal], LAMBDA[ihal] = sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, cx, cy, cz, RAD05_x[ihal], RAD05_y[ihal], RAD05_z[ihal])
-            EDAD[ihal], EDAD_MASS[ihal], MET[ihal], MET_MASS[ihal] = avg_age_metallicity(part_list, st_age, st_met, st_mass, cosmo_time*units.time_to_yr/1e9)
+            SIG_1D_x[ihal], SIG_1D_y[ihal], SIG_1D_z[ihal], VSIGMA[ihal], LAMBDA[ihal] = halo_properties.sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, 
+                                                                                                                           st_mass, cx, cy, cz, RAD05_x[ihal], RAD05_y[ihal], RAD05_z[ihal])
+            EDAD[ihal], EDAD_MASS[ihal], MET[ihal], MET_MASS[ihal] = halo_properties.avg_age_metallicity(part_list, st_age, st_met, st_mass, cosmo_time*units.time_to_yr/1e9)
         
         if len(new_groups)>0:
             print()
@@ -1766,8 +554,6 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
             oripas = st_oripa[halo]
             oripas_before.append(oripas)
         ##########################################
-
-
 
     else:
         print('No stars found!!')

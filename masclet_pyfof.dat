@@ -1,6 +1,6 @@
 *************PARAMETERS FILE******************************
 firts, last iteration,write interval ------------------------------------>
-4000,4000,50
+1000,1000,50
 MASCLET cells nx,ny,nz: coarse hydro. grid ------------------------------>
 128,128,128
 hubble cte(h), OMEGA matter, t0 ----------------------------------------->
@@ -8,22 +8,22 @@ hubble cte(h), OMEGA matter, t0 ----------------------------------------->
 initial redshift, box size    ------------------------------------------->
 100.0,40.
 link(Mpc) (fixed) ------------------------------------------------------->
-0.002
+0.00346
 Min num. part. per halo ------------------------------------------------->
-500
+50
 phase space cleaning (v/sigma), min. num. of part in cell --------------->
 3.0,1
 OLD MASCLET (0 -> no, 1 -> yes )----------------------------------------->
-1
+0
 WRITE HALO PARTICLES (0 -> no, 1 -> yes ) ------------------------------->
 0
-CALCULATE morphology (Sérsic index) (0 -> no, 1 -> yes ) ---------------->
+CALCULATE RPS (0 -> no, 1 -> yes ) -------------------------------------->
 1
 FOLDER IN WHICH HALO PARTICLES WILL BE WRITTEN -------------------------->
 /scratch/monllor/pyfof_halo_particles/2017
 MASCLET results folder -------------------------------------------------->
-/scratch/monllor/resultats_MASCLET/box_L40_p32_128_l9_2017
+/scratch/monllor/resultats_MASCLET/cluster_L20_p32_v18_2023_sim_1
 Name for the catalogue -------------------------------------------------->
-halma_catalogue_from_PYFOF_2017_try.res
+halma_catalogue_from_PYFOF_cluster_2023_18.res
 Number of CPU cores for NUMBA to parallelize ---------------------------->
-8    
+12
