@@ -6,7 +6,7 @@ from tqdm import tqdm
 #Our things
 sys.path.append('/home/monllor/projects/')
 from masclet_framework import read_masclet, units
-import galaxy_image_fit, halo_properties
+import galaxy_image_fit, halo_properties, halo_gas
 
 """
 Help on module pyfof:
@@ -66,10 +66,6 @@ with open('masclet_pyfof.dat', 'r') as f:
     write_particles = bool(int(f.readline()))
     f.readline()
     rps_flag = bool(int(f.readline()))
-    f.readline()
-    path_halo_particles = f.readline()[:-1]
-    f.readline()
-    path_results = f.readline()[:-1]
     f.readline()
     catalogue_name = f.readline()[:-1]
     f.readline()
@@ -197,6 +193,7 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
 ########## ########## ########## ########## ########## 
 ########## ########## ########## ########## ########## 
 
+path_results = 'simu_masclet'
 
 re0 = 1.0  #factor de escala a z = 0
 
@@ -210,7 +207,8 @@ print()
 print('----> Using', ncore,'CPU threads')
 
 ###############################
-set_num_threads(ncore)
+if __name__ == '__main__':
+    set_num_threads(ncore)
 ###############################
 
 total_iteration_data = []
@@ -253,41 +251,18 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
                                                     read_general=True, read_patchnum=True, read_dmpartnum=False,
                                                     read_patchcellextension=True, read_patchcellposition=True, read_patchposition=True,
                                                     read_patchparent=False)
-        # nl = grid_data[2]
-        # npatch = grid_data[5] #number of patches in each level, starting in l=0
-        # patchnx = grid_data[6] #patchnx (...): x-extension of each patch (in level l cells) (and Y and Z)
-        # patchny = grid_data[7]
-        # patchnz = grid_data[8]
-        # patchrx = grid_data[12] #patchrx (...): physical position of the center of each patch first ¡l-1! cell (and Y and Z)
-        # patchry = grid_data[13] # in Mpc
-        # patchrz = grid_data[14]
 
         #READ CLUS
         gas_data = read_masclet.read_clus(iteration, path=path_results, parameters_path=path_results, digits=5, max_refined_level=1000, output_delta=True, 
-                                          output_v=True, output_pres=False, output_pot=True, output_opot=False, output_temp=True, output_metalicity=False,
+                                          output_v=True, output_pres=False, output_pot=False, output_opot=False, output_temp=True, output_metalicity=False,
                                           output_cr0amr=True, output_solapst=True, is_mascletB=False, output_B=False, is_cooling=True, verbose=False)
 
-        # gas_delta = gas_data[0]
-        # gas_density = misctools.delta_to_rho(gas_delta)
-        # gas_cr0amr = gas_data[1]
-        # gas_solapst = gas_data[2]
-        # gas_vx = gas_data[3]*3e5 #in km/s
-        # gas_vy = gas_data[4]*3e5 #in km/s
-        # gas_vz = gas_data[5]*3e5 #in km/s
-        # gas_pot = gas_data[6]
-        # gas_temp = gas_data[7]
 
         #READ DM
         masclet_dm_data = read_masclet.read_cldm(iteration, path = path_results, parameters_path=path_results, 
                                                     digits=5, max_refined_level=1000, output_deltadm = False,
                                                     output_position=True, output_velocity=False, output_mass=True)
-        # dm_x = masclet_dm_data[0]
-        # dm_y = masclet_dm_data[1]
-        # dm_z = masclet_dm_data[2]
-        # dm_mass = masclet_st_data[3]*units.mass_to_sun #in Msun
-        
-    else:
-        continue
+
 
     masclet_st_data = read_masclet.read_clst(iteration, path = path_results, parameters_path=path_results, 
                                                     digits=5, max_refined_level=1000, 
@@ -306,12 +281,6 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
     st_met = masclet_st_data[8]
     st_oripa = masclet_st_data[9] #necessary for mergers
 
-    # if old_masclet:
-
-    #     ###### IN 2017 SIMULATION FIX ORIPAS ############
-    #     print('!!!!!!!!!!!!! Fixing ORIPA (2017 or older simulations)')
-    #     st_oripa = particles.correct_positive_oripa(st_oripa, st_mass)
-    #     ################################################
 
     data = np.vstack((st_x, st_y, st_z)).T
     data = data.astype(np.float64)
@@ -416,6 +385,10 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         SAXISINTERMEDIATE = np.zeros(NHAL)
         SAXISMINOR = np.zeros(NHAL)
         SERSIC = np.zeros(NHAL)
+        MGAS = np.zeros(NHAL)
+        FRACCOLD = np.zeros(NHAL)
+        MRPS_COLD = np.zeros(NHAL)
+        MRPS_HOT = np.zeros(NHAL)
         for ihal in tqdm(range(NHAL)):
             part_list = new_groups[ihal]
             PEAKX[ihal], PEAKY[ihal], PEAKZ[ihal] = halo_properties.density_peak(part_list, st_x, st_y, st_z, st_mass, ll)
@@ -439,10 +412,18 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
             SIG_3D[ihal] = halo_properties.sigma_effective(part_list, RAD05[ihal], st_x, st_y, st_z, st_vx, st_vy, st_vz, cx, cy, cz, VX[ihal], VY[ihal], VZ[ihal])
             grid = np.arange(-(RMAX[ihal]+ll), RMAX[ihal]+ll, 2*ll) #centers of the cells
             n_cell = len(grid)
-            SIG_1D_x[ihal], SIG_1D_y[ihal], SIG_1D_z[ihal], VSIGMA[ihal], LAMBDA[ihal] = halo_properties.sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, 
-                                                                                                                           st_mass, cx, cy, cz, RAD05_x[ihal], RAD05_y[ihal], RAD05_z[ihal])
+            SIG_1D_x[ihal], SIG_1D_y[ihal], SIG_1D_z[ihal], VSIGMA[ihal], LAMBDA[ihal] = halo_properties.sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, 
+                                                                                                                           st_vx, st_vy, st_vz, st_mass, cx, cy, cz, 
+                                                                                                                           RAD05_x[ihal], RAD05_y[ihal], RAD05_z[ihal], ll)
             EDAD[ihal], EDAD_MASS[ihal], MET[ihal], MET_MASS[ihal] = halo_properties.avg_age_metallicity(part_list, st_age, st_met, st_mass, cosmo_time*units.time_to_yr/1e9)
-        
+
+            # RPS EFFECTS
+            if rps_flag:
+                Rrps = 2*RAD05[ihal]
+                MGAS[ihal], FRACCOLD[ihal], MRPS_COLD[ihal], MRPS_HOT[ihal] = halo_gas.RPS(rete, L, nx, grid_data, gas_data, 
+                                                                                     masclet_dm_data, masclet_st_data, cx, cy, cz, 
+                                                                                     VX[ihal], VY[ihal], VZ[ihal], Rrps)
+
         if len(new_groups)>0:
             print()
             print('CHECK min, max in R_05', np.min(RAD05)*rete*1e3, np.max(RAD05)*rete*1e3)
@@ -539,6 +520,10 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         SAXISINTERMEDIATE = SAXISINTERMEDIATE[argsort_part]
         SAXISMINOR = SAXISMINOR[argsort_part]
         SERSIC = SERSIC[argsort_part]
+        MGAS = MGAS[argsort_part]
+        FRACCOLD = FRACCOLD[argsort_part]
+        MRPS_COLD = MRPS_COLD[argsort_part]
+        MRPS_HOT = MRPS_HOT[argsort_part]
 
         ##########################################
         ##########################################
@@ -587,10 +572,10 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         halo['partNum'] = NPART[ih]
         halo['M'] = MM[ih]
         halo['Mv'] = 0.
-        halo['Mgas'] = 0.
-        halo['fcold'] = 0.
-        halo['Mhotgas'] = 0.
-        halo['Mcoldgas'] = 0.
+        halo['Mgas'] = MGAS[ih]
+        halo['fcold'] = FRACCOLD[ih]
+        halo['Mcoldgas'] = MRPS_COLD[ih]
+        halo['Mhotgas'] = MRPS_HOT[ih]
         halo['Msfr'] = MSFR[ih]
         halo['Rmax'] = RMAX[ih]*rete*1e3 #kpc
         halo['R'] = RAD05[ih]*rete*1e3
@@ -639,7 +624,7 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         new_groups = np.array(new_groups, dtype=object)
         new_groups = new_groups[argsort_part]
         all_particles_in_haloes = np.concatenate(new_groups)
-        np.save(path_halo_particles+'/halotree'+string_it+'.npy', all_particles_in_haloes)
+        np.save('halo_particles/halotree'+string_it+'.npy', all_particles_in_haloes)
     ###########################################
 
 

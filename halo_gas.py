@@ -1,16 +1,15 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from numba import njit, prange
+from numba import njit, prange, set_num_threads, get_num_threads
 import sys
 
 # our modules
 sys.path.append('/home/monllor/projects/')
 from masclet_framework import units, tools
-import misctools
 
 @njit
 def patch_to_particles(patch_res, patch_rx, patch_ry, patch_rz, patch_nx, patch_ny, 
-                       patch_nz, patch_density, patch_cr0amr, patch_solapst, patch_vx,
+                       patch_nz, patch_delta, patch_cr0amr, patch_solapst, patch_vx,
                        patch_vy, patch_vz, patch_temp, box):
 
     #max number of gas particles this patch can provide
@@ -30,6 +29,9 @@ def patch_to_particles(patch_res, patch_rx, patch_ry, patch_rz, patch_nx, patch_
     y0 = patch_ry - patch_res/2
     z0 = patch_rz - patch_res/2
     partNum = 0
+    #conversion from rho_B to M_sun/mpc^3
+    rho_B = 1.8791e-29 #g/cm^3
+    rho_B *= units.g_to_sun / units.cm_to_mpc**3
     for ix in range(patch_nx):
         x = x0 + ix*patch_res #cell center
         if x > box[0] and x < box[1]:
@@ -40,14 +42,14 @@ def patch_to_particles(patch_res, patch_rx, patch_ry, patch_rz, patch_nx, patch_
                         z = z0 + iz*patch_res
                         if z > box[4] and z < box[5]:
                             #check if cell is not refined or solaped
-                            if patch_cr0amr[ix,iy,iz] == 1 and patch_solapst[ix,iy,iz] == 1:
+                            if patch_cr0amr[ix,iy,iz] and patch_solapst[ix,iy,iz]:
                                 part_x[partNum] = x
                                 part_y[partNum] = y
                                 part_z[partNum] = z
                                 part_vx[partNum] = patch_vx[ix,iy,iz]
                                 part_vy[partNum] = patch_vy[ix,iy,iz]
                                 part_vz[partNum] = patch_vz[ix,iy,iz]
-                                part_mass[partNum] = patch_density[ix,iy,iz] * patch_res**3 # CARE, THIS IS COMOVING, NOT PHYSICAL
+                                part_mass[partNum] = (1 + patch_delta[ix,iy,iz]) * rho_B * patch_res**3 # CARE, THIS IS COMOVING, NOT PHYSICAL
                                 part_temp[partNum] = patch_temp[ix,iy,iz]
                                 partNum += 1
 
@@ -55,7 +57,7 @@ def patch_to_particles(patch_res, patch_rx, patch_ry, patch_rz, patch_nx, patch_
 
 
 
-def AMRgrid_to_particles(L, ncoarse, grid_data, gas_data, R05, cx, cy, cz):
+def AMRgrid_to_particles(L, ncoarse, grid_data, gas_data, Rrps, cx, cy, cz):
     ##################################################################################
     # This routine aims to pass from the AMR grid to a particle representation of the gas
     # We will put a gas particle in the center of each cell, with a mass equal to the cell mass
@@ -77,17 +79,16 @@ def AMRgrid_to_particles(L, ncoarse, grid_data, gas_data, R05, cx, cy, cz):
     patchrz = grid_data[14]
 
     # GAS
-    gas_delta = gas_data[0]
-    gas_density = misctools.delta_to_rho(gas_delta)
-    gas_cr0amr = gas_data[1]
-    gas_solapst = gas_data[2]
-    gas_vx = gas_data[3]*3e5 #in km/s
-    gas_vy = gas_data[4]*3e5 #in km/s
-    gas_vz = gas_data[5]*3e5 #in km/s
-    gas_temp = gas_data[7]
+    gas_delta = gas_data[0] #delta = rho/rho_B - 1
+    gas_vx = gas_data[1]
+    gas_vy = gas_data[2]
+    gas_vz = gas_data[3]
+    gas_temp = gas_data[4]
+    gas_cr0amr = gas_data[5]
+    gas_solapst = gas_data[6]
 
     # DEFINE BOX IN WHICH WE WILL LOOK FOR PATCHES
-    Rbox = 1.*R05
+    Rbox = Rrps
     box = np.array([cx-Rbox, cx+Rbox, cy-Rbox, cy+Rbox, cz-Rbox, cz+Rbox])
 
     # FIND WHICH PATCHES CONTRIBUTE TO THE HALO
@@ -107,52 +108,61 @@ def AMRgrid_to_particles(L, ncoarse, grid_data, gas_data, R05, cx, cy, cz):
     for patch in which_patches:  
         #PATCH DATA
         l = patch_level[patch]
-        patch_res = (L/ncoarse)/2**l
-        patch_rx = patchrx[patch]
-        patch_ry = patchry[patch]
-        patch_rz = patchrz[patch]
-        patch_nx = patchnx[patch]
-        patch_ny = patchny[patch]
-        patch_nz = patchnz[patch]
-        patch_density = gas_density[patch]
-        patch_cr0amr = gas_cr0amr[patch]
-        patch_solapst = gas_solapst[patch]
-        patch_vx = gas_vx[patch]
-        patch_vy = gas_vy[patch]
-        patch_vz = gas_vz[patch]
-        patch_temp = gas_temp[patch]
+        if l >= 1: #avoid the coarsest level
+            patch_res = (L/ncoarse)/2**l
+            patch_rx = patchrx[patch]
+            patch_ry = patchry[patch]
+            patch_rz = patchrz[patch]
+            patch_nx = patchnx[patch]
+            patch_ny = patchny[patch]
+            patch_nz = patchnz[patch]
+            patch_delta = gas_delta[patch]
+            patch_cr0amr = gas_cr0amr[patch]
+            patch_solapst = gas_solapst[patch]
+            patch_vx = gas_vx[patch]
+            patch_vy = gas_vy[patch]
+            patch_vz = gas_vz[patch]
+            patch_temp = gas_temp[patch]
+            #CREATE PARTICLES FROM THE PATCH
+            part_x, part_y, part_z, part_vx, part_vy, part_vz, part_mass, part_temp = patch_to_particles(patch_res, patch_rx, patch_ry, patch_rz, patch_nx, patch_ny, 
+                                                                                                        patch_nz, patch_delta, patch_cr0amr, patch_solapst, patch_vx,
+                                                                                                        patch_vy, patch_vz, patch_temp, box)
+            
+            #APPEND PARTICLES TO THE GAS PARTICLES ARRAY
+            gas_particles_x = np.append(gas_particles_x, part_x)
+            gas_particles_y = np.append(gas_particles_y, part_y)
+            gas_particles_z = np.append(gas_particles_z, part_z)
+            gas_particles_vx = np.append(gas_particles_vx, part_vx)
+            gas_particles_vy = np.append(gas_particles_vy, part_vy)
+            gas_particles_vz = np.append(gas_particles_vz, part_vz)
+            gas_particles_mass = np.append(gas_particles_mass, part_mass)
+            gas_particles_temp = np.append(gas_particles_temp, part_temp)
 
-        #CREATE PARTICLES FROM THE PATCH
-        part_x, part_y, part_z, part_vx, part_vy, part_vz, part_mass, part_temp = patch_to_particles(patch_res, patch_rx, patch_ry, patch_rz, patch_nx, patch_ny, 
-                                                                                                    patch_nz, patch_density, patch_cr0amr, patch_solapst, patch_vx,
-                                                                                                    patch_vy, patch_vz, patch_temp, box)
-        
-        #APPEND PARTICLES TO THE GAS PARTICLES ARRAY
-        gas_particles_x = np.append(gas_particles_x, part_x)
-        gas_particles_y = np.append(gas_particles_y, part_y)
-        gas_particles_z = np.append(gas_particles_z, part_z)
-        gas_particles_vx = np.append(gas_particles_vx, part_vx)
-        gas_particles_vy = np.append(gas_particles_vy, part_vy)
-        gas_particles_vz = np.append(gas_particles_vz, part_vz)
-        gas_particles_mass = np.append(gas_particles_mass, part_mass)
-        gas_particles_temp = np.append(gas_particles_temp, part_temp)
+    # VX, VY, VZ are in c = 1 units, we need to convert them to km/s
+    gas_particles_vx *= 3e5
+    gas_particles_vy *= 3e5
+    gas_particles_vz *= 3e5
 
     return gas_particles_x, gas_particles_y, gas_particles_z, gas_particles_vx, gas_particles_vy, gas_particles_vz, gas_particles_mass, gas_particles_temp
 
 
-@njit(fastmath=True) #allow not that strict math precision
+@njit(parallel = True) #allow not that strict math precision
 def brute_force_binding_energy(total_mass, total_x, total_y, total_z, gas_x, gas_y, gas_z):
     partNum_gas = len(gas_x)
     binding_energy = np.zeros(partNum_gas)
     for ip in range(partNum_gas):
         r = np.sqrt((total_x - gas_x[ip])**2 + (total_y - gas_y[ip])**2 + (total_z - gas_z[ip])**2)
-        # avoid r = 0
-        r[r<1e-8] = np.nan
-        binding_energy[ip] = np.nansum(total_mass/r)
-
+        reduction = 0.
+        for ip2 in prange(len(r)):
+            if r[ip2] > 0.:
+               reduction += total_mass[ip2]/r[ip2]
+        
+        binding_energy[ip] = reduction
+        
     return binding_energy
 
-def RPS(L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data, R05, cx, cy, cz, vx, vy, vz):
+
+def RPS(rete, L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data, cx, cy, cz, vx, vy, vz, Rrps):
     ##################################################################################
     # This routine aims to calculate the bound/unbound mass gas fraction of each halo
     # For that, we have to pass from the AMR grid to a particle representation of the gas
@@ -167,14 +177,14 @@ def RPS(L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data, R05, 
     dm_x = masclet_dm_data[0]
     dm_y = masclet_dm_data[1]
     dm_z = masclet_dm_data[2]
-    dm_mass = masclet_st_data[3]*units.mass_to_sun #in Msun
+    dm_mass = masclet_dm_data[3]*units.mass_to_sun #in Msun
     # Search for the DM particles inside R05
     dm_gcd = np.sqrt((dm_x-cx)**2 + (dm_y-cy)**2 + (dm_z-cz)**2) # galaxy-centric distance
-    inside_R05 = dm_gcd < R05
-    dm_x = dm_x[inside_R05]
-    dm_y = dm_y[inside_R05]
-    dm_z = dm_z[inside_R05]
-    dm_mass = dm_mass[inside_R05]
+    inside_Rrps = dm_gcd < Rrps
+    dm_x = dm_x[inside_Rrps]
+    dm_y = dm_y[inside_Rrps]
+    dm_z = dm_z[inside_Rrps]
+    dm_mass = dm_mass[inside_Rrps]
 
     # STARS
     st_x = masclet_st_data[0]
@@ -183,25 +193,30 @@ def RPS(L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data, R05, 
     st_mass = masclet_st_data[6]*units.mass_to_sun #in Msun
     # Search for the star particles inside R05
     st_gcd = np.sqrt((st_x-cx)**2 + (st_y-cy)**2 + (st_z-cz)**2) # galaxy-centric distance
-    inside_R05 = st_gcd < R05
-    st_x = st_x[inside_R05]
-    st_y = st_y[inside_R05]
-    st_z = st_z[inside_R05]
+    inside_Rrps = st_gcd < Rrps
+    st_x = st_x[inside_Rrps]
+    st_y = st_y[inside_Rrps]
+    st_z = st_z[inside_Rrps]
+    st_mass = st_mass[inside_Rrps]
     #####################
 
     #####################  GAS AMR TO GAS PARTICLES
-    gas_x, gas_y, gas_z, gas_vx, gas_vy, gas_vz, gas_mass, gas_temp = AMRgrid_to_particles(L, ncoarse, grid_data, gas_data, R05, cx, cy, cz)
+    gas_x, gas_y, gas_z, gas_vx, gas_vy, gas_vz, gas_mass, gas_temp = AMRgrid_to_particles(L, ncoarse, grid_data, gas_data, Rrps, cx, cy, cz)
+
     # CHECK THAT THE GAS PARTICLES ARE INSIDE R05
     gas_gcd = np.sqrt((gas_x-cx)**2 + (gas_y-cy)**2 + (gas_z-cz)**2) # galaxy-centric distance
-    inside_R05 = gas_gcd < R05
-    gas_x = gas_x[inside_R05]
-    gas_y = gas_y[inside_R05]
-    gas_z = gas_z[inside_R05]
-    gas_vx = gas_vx[inside_R05]
-    gas_vy = gas_vy[inside_R05]
-    gas_vz = gas_vz[inside_R05]
-    gas_mass = gas_mass[inside_R05]
-    gas_temp = gas_temp[inside_R05]
+    inside_Rrps = gas_gcd < 2*Rrps
+    gas_x = gas_x[inside_Rrps]
+    gas_y = gas_y[inside_Rrps]
+    gas_z = gas_z[inside_Rrps]
+    gas_vx = gas_vx[inside_Rrps]
+    gas_vy = gas_vy[inside_Rrps]
+    gas_vz = gas_vz[inside_Rrps]
+    gas_mass = gas_mass[inside_Rrps]
+    gas_temp = gas_temp[inside_Rrps]
+    
+    # FROM COMOVING VOLUME TO PHYSICAL VOLUME
+    gas_mass *= rete**3
 
     # take into account that gas_mass should be corrected by the scale factor, 
     # since it is density*cell_volume and this volume is in comoving coordinates
@@ -215,15 +230,18 @@ def RPS(L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data, R05, 
     total_z = np.concatenate((gas_z, st_z, dm_z))
     total_mass = np.concatenate((gas_mass, st_mass, dm_mass))
 
+    # print('Total number of particles (gas + dm + stars): ', len(total_x))
+    # print('Total number of gas particles: ', len(gas_x))
+    # print('Calculating binding energy...')
+
     # CALCULATE BINDING ENERGY OF EACH GAS PARTICLE
 
     binding_energy = brute_force_binding_energy(total_mass, total_x, total_y, total_z, gas_x, gas_y, gas_z)
+    binding_energy = - binding_energy # binding energy is negative
 
     # Now the variable binding_energy is in units of Msun/mpc, we need to convert it to km^2/s^2
-    G_const = units.G_isu #  6.674e-11 # m^3 kg^-1 s^-2
-    G_const /= units.mass_to_sun #  m^3 Msun^-1 s^-2
-    G_const *= units.m_to_mpc #  m^2 mpc Msun^-1 s^-2
-    G_const *= 1e-6 # km^2 mpc Msun^-1 s^-2
+    G_const = 4.3*1e-3 # in units of (km/s)^2 pc/Msun
+    G_const *= 1e-6 # in units of (km/s)^2 Mpc/Msun
 
     binding_energy *= G_const # km^2 s^-2
 
@@ -233,22 +251,22 @@ def RPS(L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data, R05, 
     # TOTAL ENERGY OF EACH GAS PARTICLE
     total_energy = gas_v2 + binding_energy # km^2 s^-2
 
+    # print(np.max(gas_v2), np.max(binding_energy), np.max(total_energy))
+    # print(np.min(gas_v2), np.min(binding_energy), np.min(total_energy))
+
     # BOUNDED AND UNBOUNDED GAS PARTICLES
     unbounded = total_energy > 0.
     bounded = total_energy <= 0.
-
     # COLD AND HOT GAS PARTICLES
     cold = gas_temp < 5*1e4
     hot = gas_temp >= 5*1e4
 
     ##################### RETURN VARIABLES
     total_gas_mass = np.sum(gas_mass)
-    bounded_gas_mass = np.sum(gas_mass[bounded])
-    unbounded_gas_mass = np.sum(gas_mass[unbounded])
-    cold_gas_mass = np.sum(gas_mass[cold])
-    hot_gas_mass = np.sum(gas_mass[hot])
-    bounded_cold_gas_mass = np.sum(gas_mass[bounded*cold])
-    bounded_hot_gas_mass = np.sum(gas_mass[bounded*hot])
+    cold_bound_gas_mass = np.sum(gas_mass[cold*bounded])
+    frac_cold_gas_mass = cold_bound_gas_mass/total_gas_mass
+    unbounded_cold_gas_mass = np.sum(gas_mass[unbounded*cold])
+    unbounded_hot_gas_mass = np.sum(gas_mass[unbounded*hot])
 
-    return total_gas_mass, bounded_gas_mass, unbounded_gas_mass, cold_gas_mass, hot_gas_mass, bounded_cold_gas_mass, bounded_hot_gas_mass
+    return total_gas_mass, frac_cold_gas_mass, unbounded_cold_gas_mass, unbounded_hot_gas_mass
 
