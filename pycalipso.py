@@ -9,16 +9,15 @@ from scipy.interpolate import interp1d
 
 
 ### AVISOS PARA ENTENDER EL CÓDIGO:
-# EL ARRAY SSP es de LUMINOSIDADES y viene en Lo A^-1 Mo^-1
 # mag no es una magnitud. Al sumarle cfact: fmag = mag + cfact lo convertimos en una magnitud
 # cfact CONVIERTE sum_s DENTRO DE mag EN UN FLUJO (dividiendo por 4pidlum^2), pasa dlum de Mpc a cm y ademas pasa la luminsodidad de Lo a erg/s
 # fmag puede ser APARENTE o ABSOLUTA. si dlum = 1 parsec, entonces es ABSOLUTA
 
 
 ##################################################################################################
-# LECTURA DE SSP, FILTROS Y CALIBRACIÓN VEGA #
+# READERS: SSP, FILTERS AND VEGA/AB CALIBRATION #
 ##################################################################################################
-def readSSPfiles(dirssp, lstart, lend): #LA LUMINOSIDAD DE LAS SSP VIENE EN Lo A^-1 Mo^-1     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
+def readSSPfiles(dirssp, lstart, lend):
     print('1 - Reading SSP files')
     age_span = np.array([0.0631, 0.0708, 0.0794, 0.0891, 0.10, 0.1122, 0.1259, 0.1413, 
                         0.1585, 0.1778, 0.1995, 0.2239, 0.2512, 0.2818, 0.3162, 0.3548, 0.3981, 
@@ -178,10 +177,10 @@ def from_ws_to_wfilt(fs, wfilt, nfilt, ws, ns):
 
     return fs_new
 
-@njit
+@njit(parallel = True)
 def trapecio(f, x):
     sum = 0.
-    for ix in range(len(x)-1):
+    for ix in prange(len(x)-1):
         sum += (x[ix+1] - x[ix])*(f[ix] + f[ix+1])/2
     return sum
 
@@ -329,14 +328,6 @@ def magANDfluxes(wavelenghts, nw, nf, nlf, wf, rf, wv, fv, nv, dlum, nx, ny, flu
     SBf = np.zeros((nx, ny, nf)) #BRILLO SUPERFICIAL DE CADA CELDA EN mag/arcsec^2
     magf = np.zeros((nx, ny, nf)) #MAGNITUD APARENTE DE CADA CELDA A UNA DISTANCIA DLUM
     fluxf = np.zeros((nx, ny, nf)) #LUMINOSIDAD INTRÍNSECA DE CADA CELDA
-    # nvi = 0 #número de celdas visibles
-    # mv = 0. #masa visible
-    # Zv = 0. #metalicidad media visible
-    # tv = 0. #edad media visible
-    # Zmv = 0. # lo mismo pesado en masa en masa visible
-    # tmv = 0.
-    # grv = 0. #color visible
-    # grv_mas = 0. #color visible, pesado en masa visible
     for tam_ii in range(nx):
         for tam_jj in range(ny):
             fmag = np.zeros(nf)
@@ -345,26 +336,7 @@ def magANDfluxes(wavelenghts, nw, nf, nlf, wf, rf, wv, fv, nv, dlum, nx, ny, flu
             SBf[tam_ii,tam_jj,:] = fmag[:]+2.5*log10(area_arc) #SB a partir de la magnitud aparente y el area en arcsec^2
             fluxf[tam_ii, tam_jj, :] = flux[:]
             magf[tam_ii, tam_jj, :] = fmag[:]
-
-            # if SBf[tam_ii, tam_jj, 1] < SB_lim: #CELDAS VISIBLES en r
-            #     nvi += 1
-            #     mv += mass_cell[tam_ii,tam_jj]
-            #     Zv += Zwm[tam_ii,tam_jj]
-            #     tv += twm[tam_ii,tam_jj]
-            #     Zmv += mass_cell[tam_ii,tam_jj]*Zwm[tam_ii,tam_jj]
-            #     tmv += mass_cell[tam_ii,tam_jj]*twm[tam_ii,tam_jj]
-            #     grv += fmag[0]-fmag[1]
-            #     grv_mas += mass_cell[tam_ii,tam_jj]*(fmag[0]-fmag[1])
-
-    # if mv>0:
-    #     Zv=Zv/nvi
-    #     tv=tv/nvi
-    #     grv=grv/nvi
-    #     Zmv=Zmv/mv
-    #     tmv=tmv/mv
-    #     grv_mas=grv_mas/mv
     
-    #return SBf, magf, fluxf, nvi, mv, Zv, tv, Zmv, tmv, grv, grv_mas, 
     return SBf, magf, fluxf
 
 

@@ -2,7 +2,7 @@ import numpy as np
 import pyfof
 import sys
 from astropy import cosmology
-from numba import njit, prange, set_num_threads
+import numba
 from tqdm import tqdm
 from math import sqrt, log10, acos
 import matplotlib.pyplot as plt
@@ -231,11 +231,12 @@ dirssp = 'E-MILES'
 ### CALIPSO BLOCK
 ########## ########## ########## ########## ##########
 if calipso_flag:
+    print('*************************************')
     print('Before FoF, reading calipso files..')
     wavelenghts, SSP, age_span, Z_span, MH_span, nages, nZ, nw = pycalipso.readSSPfiles(dirssp, lstart, lend)
     nf, nlf, wf, rf = pycalipso.readFilters()
     wv, fv, nv = pycalipso.readVega(zp_5556)
-    print('done')
+    print('.. done')
     dlum=1.e-5 #10 pc --> absolute mag
     magssp = np.zeros((nages,nZ,nf))
     fluxssp = np.zeros((nages,nZ,nf))
@@ -263,6 +264,9 @@ if calipso_flag:
 
     print('Spectrum will be written in the range:', wavelenghts[istart], wavelenghts[iend], '(A)')
     disp=wavelenghts[2]-wavelenghts[1] #resolución espectral
+    print('*************************************')
+    print()
+    print()
     print()
 
 ########## ########## ########## ########## ##########
@@ -280,12 +284,14 @@ print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
 print('CHECK!!!! --> LINKING LENGHT (kpc)', ll*1e3)
 print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
 print()
-print('----> Using', ncore,'CPU threads')
 
 ###############################
 if __name__ == '__main__':
-    set_num_threads(ncore)
+    numba.set_num_threads(ncore)
 ###############################
+
+print('----> Available CPU cores:', numba.config.NUMBA_NUM_THREADS)
+print('----> Using', numba.get_num_threads(), 'cores')
 
 total_iteration_data = []
 total_halo_data = []
@@ -516,10 +522,11 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
 
         if len(new_groups)>0:
             print()
-            print('CHECK min, max in R_05', np.min(RAD05)*rete*1e3, np.max(RAD05)*rete*1e3)
-            print('CHECK min, max in RMAX', np.min(RMAX)*rete*1e3, np.max(RMAX)*rete*1e3)
-            print('CHECK min, max in NPART', np.min(NPART), np.max(NPART))
-            print('CHECK min, max in J', np.min(J)*rete*1e3, np.max(J)*rete*1e3)
+            print(f'CHECK min, max in R_05 {np.min(RAD05)*rete*1e3:.2f} {np.max(RAD05)*rete*1e3:.2f}')
+            print(f'CHECK min, max in RMAX {np.min(RMAX)*rete*1e3:.2f} {np.max(RMAX)*rete*1e3:.2f}')
+            print(f'CHECK min, max in stellar mass {np.min(MM):.2e} {np.max(MM):.2e}')
+            print(f'CHECK min, max in gas mass {np.min(MGAS):.2e} {np.max(MGAS):.2e}')
+            print(f'CHECK min, max in J {np.min(J)*rete*1e3:.2f} {np.max(J)*rete*1e3:.2f}')
             print()
 
         ##########################################
@@ -733,7 +740,7 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
                 ############################################################################################################
                 ############################################################################################################
                 ############################################################################################################
-                
+
                 #########################################################################################
                 #########################################################################################
                 # CALCULATION IN XY PLANE

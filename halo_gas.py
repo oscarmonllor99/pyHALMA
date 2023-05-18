@@ -1,7 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from numba import njit, prange, set_num_threads, get_num_threads
+import numba
 import sys
+import time
 
 # our modules
 sys.path.append('/home/monllor/projects/')
@@ -146,7 +148,11 @@ def AMRgrid_to_particles(L, ncoarse, grid_data, gas_data, Rrps, cx, cy, cz):
     return gas_particles_x, gas_particles_y, gas_particles_z, gas_particles_vx, gas_particles_vy, gas_particles_vz, gas_particles_mass, gas_particles_temp
 
 
-@njit(parallel = True) #allow not that strict math precision
+
+
+@njit(numba.float64[:](numba.float64[:], numba.float64[:], numba.float64[:], numba.float64[:], numba.float64[:], numba.float64[:], numba.float64[:]),
+      parallel=True, fastmath=True, cache=True
+      ) 
 def brute_force_binding_energy(total_mass, total_x, total_y, total_z, gas_x, gas_y, gas_z):
     partNum_gas = len(gas_x)
     binding_energy = np.zeros(partNum_gas)
@@ -235,7 +241,6 @@ def RPS(rete, L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data,
     # print('Calculating binding energy...')
 
     # CALCULATE BINDING ENERGY OF EACH GAS PARTICLE
-
     binding_energy = brute_force_binding_energy(total_mass, total_x, total_y, total_z, gas_x, gas_y, gas_z)
     binding_energy = - binding_energy # binding energy is negative
 

@@ -16,6 +16,7 @@ def total_mass(part_list, st_mass):
     for ip in prange(npart):
         ipp = part_list[ip]
         M += st_mass[ipp]
+
     return M
 
 @njit(parallel = True)
@@ -464,7 +465,7 @@ def sigma_effective(part_list, R05, st_x, st_y, st_z, st_vx, st_vy, st_vz, cx, c
         return 0.
 
 
-@njit
+@njit(parallel = True, fastmath=True, cache=True)
 def sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, cx, cy, cz, R05x, R05y, R05z, ll):
     Npart = len(part_list)
     quantas_x = np.ones((n_cell, n_cell), dtype = np.int32) #CUANTAS PARTÍCULAS EN CADA CELDA
@@ -523,7 +524,7 @@ def sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, s
     SIG_1D_z_05 = 0.
     counter_z = 0.
 
-    for ip in range(Npart):
+    for ip in prange(Npart):
         ipp = part_list[ip]
         dx = cx - st_x[ipp]
         dy = cy - st_y[ipp]
@@ -554,8 +555,8 @@ def sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, s
     sumSigmaz = 0.
     sumup_z = 0.
     sumdown_z = 0.
-    for ix in range(n_cell):
-        for iy in range(n_cell):
+    for ix in prange(n_cell):
+        for iy in prange(n_cell):
             Rbin = (grid[ix]**2 + grid[iy]**2)**0.5
             if Rbin < R05z + 2*ll: #Tolerance of 1 cell
                 #vsigma
@@ -572,8 +573,8 @@ def sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, s
     sumSigmay = 0.
     sumup_y = 0.
     sumdown_y = 0.
-    for ix in range(n_cell):
-        for iz in range(n_cell):
+    for ix in prange(n_cell):
+        for iz in prange(n_cell):
             Rbin = (grid[ix]**2 + grid[iz]**2)**0.5
             if Rbin < R05y + 2*ll: #Tolerance of 1 cell
                 #vsigma
@@ -590,8 +591,8 @@ def sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, s
     sumSigmax = 0.
     sumup_x = 0.
     sumdown_x = 0.
-    for iy in range(n_cell):
-        for iz in range(n_cell):
+    for iy in prange(n_cell):
+        for iz in prange(n_cell):
             Rbin = (grid[iy]**2 + grid[iz]**2)**0.5
             if Rbin < R05x + 2*ll: #Tolerance of 1 cell
                 #vsigma
