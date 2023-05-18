@@ -1,16 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import photutils
 import pyimfit
 from photutils.isophote import EllipseGeometry, Ellipse, build_ellipse_model
 from photutils.aperture import EllipticalAperture
-from scipy.interpolate import RegularGridInterpolator
-from scipy.optimize import curve_fit, least_squares
-import sph3D
+from scipy.optimize import curve_fit
 
-
-
-def photutils_fit(R05, R05x, R05y, R05z, R_fit_min, R_fit_max, res, star_density_2D_xy, star_density_2D_xz, star_density_2D_yz):
+def photutils_fit(R05, R_fit_min, R_fit_max, res, flux_2D):
     ###################################################################################
     #PHOTUTILS IS A PACKAGE THAT ALLOWS TO FIT ISOPHOTES TO A 2D IMAGE
     #IT IS BASED ON THE ALGORITHM OF JEDRZEJEWSKI (1987) AND BENDINELLI ET AL. (1990)
@@ -24,34 +19,21 @@ def photutils_fit(R05, R05x, R05y, R05z, R_fit_min, R_fit_max, res, star_density
     #pa --> position angle of sma (in radians) relative to the x axis
 
     sma = R05/res #FROM mpc to pixels
-    sma_xy = int(R05z/res)
-    sma_xz = int(R05y/res)
-    sma_yz = int(R05x/res)
 
     sma_fit_min = R_fit_min/res
     sma_fit_max = R_fit_max/res
     sma_fit_0 = (sma_fit_min + sma_fit_max)/2.
 
-    argmax_xy = np.argmax(star_density_2D_xy)
-    x0_xy = np.unravel_index(argmax_xy, star_density_2D_xy.shape)[0]
-    y0_xy = np.unravel_index(argmax_xy, star_density_2D_xy.shape)[1]
-    geometry_xy = EllipseGeometry(x0 = x0_xy, y0 = y0_xy, sma = sma, eps = 0.3, pa = 45 / 180 * np.pi)
-
-    argmax_xz = np.argmax(star_density_2D_xz)
-    x0_xz = np.unravel_index(argmax_xz, star_density_2D_xz.shape)[0]
-    y0_xz = np.unravel_index(argmax_xz, star_density_2D_xz.shape)[1]
-    geometry_xz = EllipseGeometry(x0 = x0_xz, y0 = y0_xz, sma = sma, eps = 0.3, pa = 45 / 180 * np.pi)
-
-    argmax_yz = np.argmax(star_density_2D_yz)
-    x0_yz = np.unravel_index(argmax_yz, star_density_2D_yz.shape)[0]
-    y0_yz = np.unravel_index(argmax_yz, star_density_2D_yz.shape)[1]
-    geometry_yz = EllipseGeometry(x0 = x0_yz, y0 = y0_yz, sma = sma, eps = 0.3, pa = 45 / 180 * np.pi)
+    argmax = np.argmax(flux_2D)
+    x0 = np.unravel_index(argmax, flux_2D.shape)[0]
+    y0 = np.unravel_index(argmax, flux_2D.shape)[1]
+    geometry = EllipseGeometry(x0 = x0, y0 = y0, sma = sma, eps = 0.3, pa = 45 / 180 * np.pi)
     
-    # PLOT TO CHECK
-    # aper = EllipticalAperture((geometry_xy.x0, geometry_xy.y0), geometry_xy.sma,
-    #                         geometry_xy.sma * (1 - geometry_xy.eps),
-    #                         geometry_xy.pa)
-    # plt.imshow(star_density_2D_xy.T, origin='lower', cmap='viridis')
+    #PLOT TO CHECK
+    # aper = EllipticalAperture((geometry.x0, geometry.y0), geometry.sma,
+    #                         geometry.sma * (1 - geometry.eps),
+    #                         geometry.pa)
+    # plt.imshow(flux_2D.T, origin='lower', cmap='viridis')
     # aper.plot(color='white')
     # plt.show()
 
@@ -62,112 +44,44 @@ def photutils_fit(R05, R05x, R05y, R05z, R_fit_min, R_fit_max, res, star_density
         return Ie*np.exp( -bn*( (R/Re)**(1/n) - 1 ) )
     
     minpoints = 10 # minimum number of points to fit
-    #XY PLANE
+
     try:
-        ellipse_xy = Ellipse(star_density_2D_xy, geometry_xy)
-        isolist_xy = ellipse_xy.fit_image(minsma=sma_fit_min, maxsma=sma_fit_max, sma0 = sma_fit_0)
-        ellipticity_list_xy = isolist_xy.eps
-        intens_list_xy = isolist_xy.intens
-        sma_list_xy = isolist_xy.sma
+        ellipse = Ellipse(flux_2D, geometry)
+        isolist = ellipse.fit_image(minsma=sma_fit_min, maxsma=sma_fit_max, sma0 = sma_fit_0)
+        ellipticity_list = isolist.eps
+        intens_list = isolist.intens
+        sma_list = isolist.sma
 
         #PLOT TO CHECK
         # model_image = build_ellipse_model(star_density_2D_xy.shape, isolist_xy)
         # plt.imshow(model_image.T)
         # plt.show
 
-        if len(intens_list_xy) >= minpoints:
+        if len(intens_list) >= minpoints:
             #FIT THE SERSIC INDEX
-            sma_list_xy = np.array(sma_list_xy)
-            intens_list_xy = np.array(intens_list_xy)
-            ellipticity_list_xy = np.array(ellipticity_list_xy)
+            sma_list = np.array(sma_list)
+            intens_list = np.array(intens_list)
+            ellipticity_list = np.array(ellipticity_list)
             #NOW, FIT
-            guess_xy = [sma, np.max(intens_list_xy), 1.]
-            param_xy, _ = curve_fit(sersic, sma_list_xy, intens_list_xy, p0 = guess_xy)
-            n_xy = param_xy[2]
+            guess = [sma, np.max(intens_list), 1.]
+            param, _ = curve_fit(sersic, sma_list, intens_list, p0 = guess)
+            n = param[2]
             #WE SELECT THE ELLIPTICITY OF THE CLOSEST ISOPHOTE TO THE HALF LIGHT RADIUS
-            eps_xy = ellipticity_list_xy[np.argmin(np.abs(sma_list_xy - sma_xy))]
+            eps = ellipticity_list[np.argmin(np.abs(sma_list - sma))]
 
             # CHECK FIT
             # plt.plot(sma_list_xy, intens_list_xy, 'o')
             # plt.plot(sma_list_xy, sersic(sma_list_xy, param_xy[0], param_xy[1], param_xy[2]))
             # plt.show()
-        else:
-            n_xy = np.nan
-            eps_xy = np.nan
-
-    except:
-        n_xy = np.nan
-        eps_xy = np.nan
-
-    #XZ PLANE
-    try:
-        ellipse_xz = Ellipse(star_density_2D_xz, geometry_xz)
-        isolist_xz = ellipse_xz.fit_image(minsma=sma_fit_min, maxsma=sma_fit_max, sma0 = sma_fit_0)
-        ellipticity_list_xz = isolist_xz.eps
-        intens_list_xz = isolist_xz.intens
-        sma_list_xz = isolist_xz.sma
-
-        #PLOT TO CHECK
-        # model_image = build_ellipse_model(star_density_2D_xz.shape, isolist_xz)
-        # plt.imshow(model_image.T)
-        # plt.show
-
-        if len(intens_list_xz) >= minpoints:
-            #FIT THE SERSIC INDEX
-            sma_list_xz = np.array(sma_list_xz)
-            intens_list_xz = np.array(intens_list_xz)
-            ellipticity_list_xz = np.array(ellipticity_list_xz)
-            #NOW, FIT
-            guess_xz = [sma, np.max(intens_list_xz), 1.]
-            param_xz, _ = curve_fit(sersic, sma_list_xz, intens_list_xz, p0 = guess_xz)
-            n_xz = param_xz[2]
-            #WE SELECT THE ELLIPTICITY OF THE CLOSEST ISOPHOTE TO THE HALF LIGHT RADIUS
-            eps_xz = ellipticity_list_xz[np.argmin(np.abs(sma_list_xz - sma_xz))]
 
         else:
-            n_xz = np.nan
-            eps_xz = np.nan
+            n = np.nan
+            eps = np.nan
 
     except:
-        n_xz = np.nan
-        eps_xz = np.nan
+        n = np.nan
+        eps = np.nan
 
-    #YZ PLANE
-    try:
-        ellipse_yz = Ellipse(star_density_2D_yz, geometry_yz)
-        isolist_yz = ellipse_yz.fit_image(minsma=sma_fit_min, maxsma=sma_fit_max, sma0 = sma_fit_0)
-        ellipticity_list_yz = isolist_yz.eps
-        intens_list_yz = isolist_yz.intens
-        sma_list_yz = isolist_yz.sma
-        
-        #PLOT TO CHECK
-        # model_image = build_ellipse_model(star_density_2D_yz.shape, isolist_yz)
-        # plt.imshow(model_image.T)
-        # plt.show
-
-        if len(intens_list_yz) >= minpoints:
-            #FIT THE SERSIC INDEX
-            sma_list_yz = np.array(sma_list_yz)
-            intens_list_yz = np.array(intens_list_yz)
-            ellipticity_list_yz = np.array(ellipticity_list_yz)
-            #NOW, FIT
-            guess_yz = [sma, np.max(intens_list_yz), 1.]
-            param_yz, _ = curve_fit(sersic, sma_list_yz, intens_list_yz, p0 = guess_yz)
-            n_yz = param_yz[2]
-            #WE SELECT THE ELLIPTICITY OF THE CLOSEST ISOPHOTE TO THE HALF LIGHT RADIUS
-            eps_yz = ellipticity_list_yz[np.argmin(np.abs(sma_list_yz - sma_yz))]
-
-        else:
-            n_yz = np.nan
-            eps_yz = np.nan
-
-    except:
-        n_yz = np.nan
-        eps_yz = np.nan
-
-    #NOW, WE COMPUTE THE AVERAGE SERSIC INDEX AND ELLIPTICITY
-    n = np.nanmean([n_xy, n_xz, n_yz]) #average ignoring nans
-    eps = np.nanmean([eps_xy, eps_xz, eps_yz]) #average ignoring nans
 
     return n, eps
 
@@ -338,104 +252,3 @@ def pyimfit_fit(R05x, R05y, R05z, res, star_density_2D_xy, star_density_2D_xz, s
 
     return n, eps
 
-
-
-def sersic_fit(R05, R05x, R05y, R05z, R_fit_min, R_fit_max, res, star_density_2D_xy, star_density_2D_xz, star_density_2D_yz, fit_mode = 'photutils'):
-    #ERROR CONTROL    
-    fit_modes = ['photutils', 'pyimfit']
-    if fit_mode not in fit_modes:
-        raise ValueError('mode must be one of %r.' % fit_modes)
-    ###########################################################
-
-    #FIT
-    if fit_mode == 'photutils':
-        n, eps = photutils_fit(R05, R05x, R05y, R05z, R_fit_min, R_fit_max, res, star_density_2D_xy, star_density_2D_xz, star_density_2D_yz)
-
-    # NOT WORKING YET
-    if fit_mode == 'pyimfit':
-        n, eps = pyimfit_fit(R05x, R05y, R05z, res, star_density_2D_xy, star_density_2D_xz, star_density_2D_yz)
-        
-    return n, eps
-
-
-def sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05, R05x, R05y, R05z):
-    # In order to capture correctyle the slope of the profile, we need to fit between
-    # the right radius. This is because the profile s not a perfect sersic, and it 
-    # has a bump (or flattening) at the center and in the outer regions the
-    # profile is not well defined.
-
-    R_fit_min = 0.
-    R_fit_max = 1.5*R05
-
-    #ONLY CONSIDER PARTICLES WITHIN R_sersic
-    x_pos = st_x[part_list]
-    y_pos = st_y[part_list]
-    z_pos = st_z[part_list]
-    R_pos = ((x_pos-cx)**2 + (y_pos-cy)**2 + (z_pos-cz)**2)**0.5
-
-    part_list = part_list[R_pos < R_fit_max]
-    x_pos = x_pos[R_pos < R_fit_max]
-    y_pos = y_pos[R_pos < R_fit_max]
-    z_pos = z_pos[R_pos < R_fit_max]
-
-    # NOW CONVERT TO POSITIONS BETWEEN 0, 2*R_sersic, f4(float32)
-    x_pos = np.float32(x_pos - cx + R_fit_max) # kpc
-    y_pos = np.float32(y_pos - cy + R_fit_max)
-    z_pos = np.float32(z_pos - cz + R_fit_max)
-
-    #DEFINING THE GRID
-    partNum = np.int32(len(part_list))
-    L_box = np.float32(2*R_fit_max) #kpc
-    res = np.float32(      ll     )  # IMPORTANT!!!! RESOLUTION OF THE GRID FOR THE SERSIC INDEX
-                                       # IT SHOULD BE -->LL<--, BUT SMALL GALAXIES ARE A PROBLEM
-                                       # BIGGEST GALAXIES ARE NOT A PROBLEM, SINCE THERE IS A MAXIMUM NUMBER OF CELLS
-                                       # SEE BELOW
-    ncell = np.int32(min( max(L_box/res, 32), 64) )
-    res = np.float32(L_box/ncell)   # RECALCULATE RES IN CASE I CHANGED IT
-    kneigh = np.int32(16) # h distance in SPH kernel is calculated as the distance to the "kneigh" nearest neighbour
-                          # the higher the kneigh value, the more time it will take
-    # CALL FORTRAN 
-    field = np.ones(partNum, dtype = np.float32) #CONSIDER ALL PARTICLES AS EQUALLY MASSIVE
-    star_density_3D, _ = sph3D.sph.main(x_pos, y_pos, z_pos, L_box, L_box, L_box, field, kneigh, ncell, ncell, ncell, partNum)
-    
-    #NOW, SURFACE DENSITY IN EACH PLANE
-    star_density_2D_xy = np.mean(star_density_3D, axis = 2)
-    star_density_2D_xz = np.mean(star_density_3D, axis = 1)
-    star_density_2D_yz = np.mean(star_density_3D, axis = 0)
-
-    ##################################################################################################
-    #EXTRAPOLATION TO GET A BETTER RESOLUTION, with scipy.regular_grid_interpolator
-    # grid_faces = np.linspace(0, L_box, ncell+1)
-    # grid_centers = (grid_faces[1:] + grid_faces[:-1])/2.
-
-    # interp_xy = RegularGridInterpolator((grid_centers, grid_centers), star_density_2D_xy, bounds_error=False, fill_value=None, method = 'linear')
-    # interp_xz = RegularGridInterpolator((grid_centers, grid_centers), star_density_2D_xz, bounds_error=False, fill_value=None, method = 'linear')
-    # interp_yz = RegularGridInterpolator((grid_centers, grid_centers), star_density_2D_yz, bounds_error=False, fill_value=None, method = 'linear')
-
-    # n_extrapolate = 256
-    # res = L_box/n_extrapolate
-    # grid_faces_finner = np.linspace(0, L_box, n_extrapolate+1)
-    # grid_centers_finner = (grid_faces_finner[1:] + grid_faces_finner[:-1])/2.
-    # X, Y = np.meshgrid(grid_centers_finner, grid_centers_finner)
-
-    # star_density_2D_xy = interp_xy((X, Y))
-    # star_density_2D_xz = interp_xz((X, Y))
-    # star_density_2D_yz = interp_yz((X, Y))
-
-    # APPLYING A GAUSSIAN FILTER TO SMOOTH THE SURFACE DENSITY
-    # sfilter = 2.
-    # star_density_2D_xy = gaussian_filter(star_density_2D_xy, sigma = sfilter)
-    # star_density_2D_xz = gaussian_filter(star_density_2D_xz, sigma = sfilter)
-    # star_density_2D_yz = gaussian_filter(star_density_2D_yz, sigma = sfilter)
-
-    # PLOT
-    # fig, ax = plt.subplots(1, 3, figsize = (15, 5))
-    # ax[0].imshow(star_density_2D_xy.T, origin = 'lower')
-    # ax[1].imshow(star_density_2D_xz.T, origin = 'lower')
-    # ax[2].imshow(star_density_2D_yz.T, origin = 'lower')
-    # plt.show()
-
-    #FITTING THE SERSIC PROFILE
-    n, eps = sersic_fit(R05, R05x, R05y, R05z, R_fit_min, R_fit_max, res, star_density_2D_xy, star_density_2D_xz, star_density_2D_yz, fit_mode = 'photutils')
-
-    return n, eps

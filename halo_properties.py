@@ -89,6 +89,9 @@ def furthest_particle(cx, cy, cz, part_list, st_x, st_y, st_z):
 @njit
 def calc_cell(cx, cy, cz, grid, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, vcm_cell, mass_cell, quantas_cell, sig3D_cell):
     npart = len(part_list)
+    which_cell_x = np.zeros(npart, dtype = np.int32)
+    which_cell_y = np.zeros(npart, dtype = np.int32)
+    which_cell_z = np.zeros(npart, dtype = np.int32)
     n_cell = len(grid)
     for ip in range(npart):
         ipp = part_list[ip]
@@ -103,6 +106,9 @@ def calc_cell(cx, cy, cz, grid, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz
         vcm_cell[ix, iy, iz, 2] += st_vz[ipp]*st_mass[ipp]
         mass_cell[ix, iy, iz] += st_mass[ipp]
         quantas_cell[ix, iy, iz] += 1
+        which_cell_x[ip] = ix
+        which_cell_y[ip] = iy
+        which_cell_z[ip] = iz
     
     #velocity normalization
     for ix in range(n_cell):
@@ -116,9 +122,9 @@ def calc_cell(cx, cy, cz, grid, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz
         x_halo = st_x[ipp] - cx
         y_halo = st_y[ipp] - cy
         z_halo = st_z[ipp] - cz
-        ix = np.argmin(np.abs(grid - x_halo))
-        iy = np.argmin(np.abs(grid - y_halo))
-        iz = np.argmin(np.abs(grid - z_halo)) 
+        ix = which_cell_x[ip]
+        iy = which_cell_y[ip]
+        iz = which_cell_z[ip]
         dVx =  vcm_cell[ix, iy, iz, 0] - st_vx[ipp]
         dVy =  vcm_cell[ix, iy, iz, 1] - st_vy[ipp]
         dVz =  vcm_cell[ix, iy, iz, 2] - st_vz[ipp]
@@ -131,10 +137,11 @@ def calc_cell(cx, cy, cz, grid, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz
                 if quantas_cell[ix, iy, iz]>0:
                     sig3D_cell[ix, iy, iz] = (sig3D_cell[ix, iy, iz]/3.0/quantas_cell[ix, iy, iz])**0.5
 
-    return vcm_cell, mass_cell, quantas_cell, sig3D_cell
+    return vcm_cell, mass_cell, quantas_cell, sig3D_cell, which_cell_x, which_cell_y, which_cell_z
 
 @njit
-def clean_cell(cx, cy, cz, M, RRHH, grid, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, vcm_cell, mass_cell, quantas_cell, sig3D_cell, ll, q_fil, sig_fil):
+def clean_cell(cx, cy, cz, M, RRHH, grid, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, 
+               vcm_cell, mass_cell, quantas_cell, sig3D_cell, ll, q_fil, sig_fil, which_cell_x, which_cell_y, which_cell_z):
     npart = len(part_list)
     control = np.ones(npart, dtype=np.int32)
     cleaned = 0
@@ -143,12 +150,9 @@ def clean_cell(cx, cy, cz, M, RRHH, grid, part_list, st_x, st_y, st_z, st_vx, st
     fac_sig = 2.0 #fac_sig
     for ip in range(npart):
         ipp = part_list[ip]
-        x_halo = st_x[ipp] - cx
-        y_halo = st_y[ipp] - cy
-        z_halo = st_z[ipp] - cz
-        ix = np.argmin(np.abs(grid - x_halo))
-        iy = np.argmin(np.abs(grid - y_halo))
-        iz = np.argmin(np.abs(grid - z_halo))
+        ix = which_cell_x[ip]
+        iy = which_cell_y[ip]
+        iz = which_cell_z[ip]
         #si hay más partículas que el mínimo requerido q_fil
         if quantas_cell[ix, iy, iz] > q_fil:
             dVx =  vcm_cell[ix, iy, iz, 0] - st_vx[ipp]
@@ -172,56 +176,13 @@ def clean_cell(cx, cy, cz, M, RRHH, grid, part_list, st_x, st_y, st_z, st_vx, st
             remaining -= 1
 
     clean_particles = part_list[np.argwhere(control).flatten()]
-    #NEW GRID
-    cx, cy, cz, M = center_of_mass(clean_particles, st_x, st_y, st_z, st_mass)
-    RRHH = furthest_particle(cx, cy, cz, clean_particles, st_x, st_y, st_z)
-    grid = np.arange(-(RRHH+ll), RRHH+ll, 2*ll)
-    n_cell = len(grid)
-    vcm_cell = np.zeros((n_cell, n_cell, n_cell, 3))
-    mass_cell = np.zeros((n_cell, n_cell, n_cell))
-    quantas_cell = np.zeros((n_cell, n_cell, n_cell))
-    sig3D_cell = np.zeros((n_cell, n_cell, n_cell))
+
     #REDUCE FAC SIG and CONTINUE CLEANING until fac_sig = 1 or frac <= 0.1+
     fac_sig *= 0.75
     if remaining > 0:
         frac = cleaned/remaining
         while frac > 0.1: #10% tolerance
-            #calculate quantities in grid
-            vcm_cell, mass_cell, quantas_cell, sig3D_cell = calc_cell(cx, cy, cz, grid, clean_particles, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, vcm_cell, mass_cell, quantas_cell, sig3D_cell)
-            cleaned = 0
-            for ip in range(npart):
-                if bool(control[ip]):
-                    ipp = part_list[ip]
-                    x_halo = st_x[ipp] - cx
-                    y_halo = st_y[ipp] - cy
-                    z_halo = st_z[ipp] - cz
-                    ix = np.argmin(np.abs(grid - x_halo))
-                    iy = np.argmin(np.abs(grid - y_halo))
-                    iz = np.argmin(np.abs(grid - z_halo))
-                    #si hay más partículas que el mínimo requerido q_fil
-                    if quantas_cell[ix, iy, iz] > q_fil:
-                        dVx =  vcm_cell[ix, iy, iz, 0] - st_vx[ipp]
-                        dVy =  vcm_cell[ix, iy, iz, 1] - st_vy[ipp]
-                        dVz =  vcm_cell[ix, iy, iz, 2] - st_vz[ipp]
-                        bas = (dVx**2 + dVy**2 + dVz**2)**0.5
-                        if quantas_cell[ix, iy, iz] >= 2:
-                            bas = bas/sig3D_cell[ix, iy, iz]
-                        else:
-                            bas = 0.
-
-                        # si la sigma de la particula es mayor que un factor
-                        # fac_sig*sig_fil veces la sigma de la celda, se desecha
-                        if bas >= fac_sig*sig_fil:
-                            control[ip] = 0
-                            cleaned += 1
-                            remaining -= 1
-                    else:
-                        control[ip] = 0
-                        cleaned += 1
-                        remaining -= 1
-
             #NEW GRID
-            clean_particles = part_list[np.argwhere(control).flatten()]
             cx, cy, cz, M = center_of_mass(clean_particles, st_x, st_y, st_z, st_mass)
             RRHH = furthest_particle(cx, cy, cz, clean_particles, st_x, st_y, st_z)
             grid = np.arange(-(RRHH+ll), RRHH+ll, 2*ll)
@@ -231,8 +192,44 @@ def clean_cell(cx, cy, cz, M, RRHH, grid, part_list, st_x, st_y, st_z, st_vx, st
             quantas_cell = np.zeros((n_cell, n_cell, n_cell))
             sig3D_cell = np.zeros((n_cell, n_cell, n_cell))
 
+            #calculate quantities in grid
+            vcm_cell, mass_cell, quantas_cell, sig3D_cell, which_cell_x, which_cell_y, which_cell_z = calc_cell(cx, cy, cz, grid, clean_particles, 
+                                                                                                                st_x, st_y, st_z, st_vx, st_vy, st_vz, 
+                                                                                                                st_mass, vcm_cell, mass_cell, 
+                                                                                                                quantas_cell, sig3D_cell)
+            npart = len(clean_particles)
+            cleaned = 0
+            for ip in range(npart):
+                ipp = clean_particles[ip]
+                ix = which_cell_x[ip]
+                iy = which_cell_y[ip]
+                iz = which_cell_z[ip]
+                #si hay más partículas que el mínimo requerido q_fil
+                if quantas_cell[ix, iy, iz] > q_fil:
+                    dVx =  vcm_cell[ix, iy, iz, 0] - st_vx[ipp]
+                    dVy =  vcm_cell[ix, iy, iz, 1] - st_vy[ipp]
+                    dVz =  vcm_cell[ix, iy, iz, 2] - st_vz[ipp]
+                    bas = (dVx**2 + dVy**2 + dVz**2)**0.5
+                    if quantas_cell[ix, iy, iz] >= 2:
+                        bas = bas/sig3D_cell[ix, iy, iz]
+                    else:
+                        bas = 0.
+
+                    # si la sigma de la particula es mayor que un factor
+                    # fac_sig*sig_fil veces la sigma de la celda, se desecha
+                    if bas >= fac_sig*sig_fil:
+                        control[ip] = 0
+                        cleaned += 1
+                        remaining -= 1
+                else:
+                    control[ip] = 0
+                    cleaned += 1
+                    remaining -= 1
+
+            clean_particles = part_list[np.argwhere(control).flatten()]
+
             if remaining == 0:
-                return 0., 0., 0., 0., 0, control
+                return 0., 0., 0., 0., 0, control, which_cell_x, which_cell_y, which_cell_z
             else:
                 #FRACTION OF CLEANED PARTICLES
                 frac = cleaned/remaining
@@ -240,7 +237,21 @@ def clean_cell(cx, cy, cz, M, RRHH, grid, part_list, st_x, st_y, st_z, st_vx, st
                 fac_sig *= 0.75
                 fac_sig = max(1., fac_sig)
 
-    return cx, cy, cz, M, RRHH, control
+    #FINAL GRID AFTER CLEANING
+    cx, cy, cz, M = center_of_mass(clean_particles, st_x, st_y, st_z, st_mass)
+    RRHH = furthest_particle(cx, cy, cz, clean_particles, st_x, st_y, st_z)
+    grid = np.arange(-(RRHH+ll), RRHH+ll, 2*ll)
+    n_cell = len(grid)
+    vcm_cell = np.zeros((n_cell, n_cell, n_cell, 3))
+    mass_cell = np.zeros((n_cell, n_cell, n_cell))
+    quantas_cell = np.zeros((n_cell, n_cell, n_cell))
+    sig3D_cell = np.zeros((n_cell, n_cell, n_cell))
+    vcm_cell, mass_cell, quantas_cell, sig3D_cell, which_cell_x, which_cell_y, which_cell_z = calc_cell(cx, cy, cz, grid, clean_particles, 
+                                                                                                        st_x, st_y, st_z, st_vx, st_vy, st_vz, 
+                                                                                                        st_mass, vcm_cell, mass_cell, 
+                                                                                                        quantas_cell, sig3D_cell)
+
+    return cx, cy, cz, M, RRHH, control, which_cell_x, which_cell_y, which_cell_z
 
 
 @njit
@@ -651,10 +662,10 @@ def simple_fit(R_list_centers, dR, x_pos, y_pos, z_pos):
     surface_density_yz = np.zeros(Nc)
     #Find surface number density profile in each projection XY, XZ, YZ
     for ip in range(npart):
-        r_xy = np.sqrt(x_pos[ip]**2 + y_pos[ip]**2)
+        r_xy = np.sqrt(x_pos[ip]**2 + y_pos[ip]**2) 
         r_xz = np.sqrt(x_pos[ip]**2 + z_pos[ip]**2)
         r_yz = np.sqrt(y_pos[ip]**2 + z_pos[ip]**2)
-        
+         
         #search radial bin
         iR_xy = int(r_xy/dR)
         iR_xz = int(r_xz/dR)
@@ -689,12 +700,14 @@ def simple_sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05):
     # COMPUTED IN ELLIPTICAL BINS. THIS IS NOT IMPLEMENTED YET.
     ##################################################################################################
 
+    ### ALL DISTANCES HAVE TO BE PHYSICAL, NOT COMOVING --> MULTIPLY BY rete (SCALE FACTOR)
+
     #RADIAL LIMITS
     R_fit_min = 0.
     R_fit_max = 2.*R05
 
     #ONLY CONSIDER PARTICLES WITHIN R_fit_min and R_fit_max
-    x_pos = st_x[part_list]-cx
+    x_pos = st_x[part_list]-cx 
     y_pos = st_y[part_list]-cy
     z_pos = st_z[part_list]-cz
     R_pos = ((x_pos)**2 + (y_pos)**2 + (z_pos)**2)**0.5
@@ -703,13 +716,13 @@ def simple_sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05):
     x_pos = x_pos[R_pos < R_fit_max]
     y_pos = y_pos[R_pos < R_fit_max]
     z_pos = z_pos[R_pos < R_fit_max]
-    R_pos = ((x_pos)**2 + (y_pos)**2 + (z_pos)**2)**0.5
+    R_pos = ((x_pos)**2 + (y_pos)**2 + (z_pos)**2)**0.5 
 
     part_list = part_list[R_pos > R_fit_min]
     x_pos = x_pos[R_pos > R_fit_min]
     y_pos = y_pos[R_pos > R_fit_min]
     z_pos = z_pos[R_pos > R_fit_min]
-    R_pos = ((x_pos)**2 + (y_pos)**2 + (z_pos)**2)**0.5
+    R_pos = ((x_pos)**2 + (y_pos)**2 + (z_pos)**2)**0.5 
 
     #RADIAL BINNING
     Nc = 10 # number of "contours", radial bins
