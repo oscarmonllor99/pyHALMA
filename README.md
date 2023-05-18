@@ -13,3 +13,5 @@ which assumes some type of IMF, and according to metallicity, mass and age, prod
 The Sérsic index fitting for the light image of each galaxy is done by means of https://github.com/astropy/photutils
 
 Just-in-time (JIT) compilation of the code and automatic parallelization is done thanks to https://numba.pydata.org/, allowing speeds comparable to Fortran or C.
+
+Tools and readers developed in https://github.com/dvallesp/masclet_framework are necessary.
