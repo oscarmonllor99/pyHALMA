@@ -93,9 +93,6 @@ with open('masclet_pyfof.dat', 'r') as f:
     L_START, L_END = np.array(f.readline().split()[0].split(','), dtype = np.float64)
 
 
-
-
-
 ########## ########## ########## ########## ########## 
 ########## ########## ########## ########## ########## 
 ########## ########## ########## ########## ########## 
@@ -556,12 +553,13 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             # RPS EFFECTS
             if RPS_FLAG:
                 rps_radius = 2*rad05[ihal] #RADIUS TO CALCULATE COLD/HOT BOUND/UNBOUND GAS
-                (gas_masses[ihal], 
-                 cold_bound_gas_fractions[ihal], 
-                 cold_unbound_gas_masses[ihal], 
-                 hot_unbound_gas_masses[ihal]) = halo_gas.RPS(rete, L, NX, grid_data, gas_data, 
-                                                                masclet_dm_data, masclet_st_data, cx, cy, cz, 
-                                                                    velocities_x[ihal], velocities_y[ihal], velocities_z[ihal], rps_radius)
+                (
+                    gas_masses[ihal], 
+                    cold_bound_gas_fractions[ihal], 
+                    cold_unbound_gas_masses[ihal], 
+                    hot_unbound_gas_masses[ihal]      ) = halo_gas.RPS(rete, L, NX, grid_data, gas_data, 
+                                                                       masclet_dm_data, masclet_st_data, cx, cy, cz, 
+                                                                       velocities_x[ihal], velocities_y[ihal], velocities_z[ihal], rps_radius)
                 
         ############################################################################################################
 
@@ -780,7 +778,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 res_interp =  L / NX / 2**9 * 1e3
                 grid_interp_edges = np.arange(grid_centers[0], grid_centers[-1], res_interp)
                 grid_interp = (grid_interp_edges[1:] + grid_interp_edges[:-1]) / 2
-                X_grid_interp, Y_grid_interp = np.meshgrid(grid_interp, grid_interp)
+                x_meshgrid_interp, y_meshgrid_interp = np.meshgrid(grid_interp, grid_interp)
 
                 ############################################################################################################
                 ############################################################################################################
@@ -825,18 +823,18 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 area_halo_pys = area_halo_com/((1.+zeta)*(1.+zeta)) # physical area of the halo in kpc^2
                 area_halo_arc = area_halo_pys/(arcsec2kpc*arcsec2kpc) # physical area of the halo in arcsec^2
 
-                SBu_tot = fmag_tot[0]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 u filter
-                SBg_tot = fmag_tot[1]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 g filter
-                SBr_tot = fmag_tot[2]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 r filter
-                SBi_tot = fmag_tot[3]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 i filter
+                sb_u_tot = fmag_tot[0]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 u filter
+                sb_g_tot = fmag_tot[1]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 g filter
+                sb_r_tot = fmag_tot[2]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 r filter
+                sb_i_tot = fmag_tot[3]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 i filter
 
                 gr = fmag_tot[1]-fmag_tot[2] # color g-r
                 ur = fmag_tot[0]-fmag_tot[2] # color u-r
 
                 #Second: same quantities but for each cell and "visibility"
-                SBf, magf, fluxf = pycalipso.magANDfluxes(WAVELENGHTS, N_W, N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, wv, fv, nv,
+                sbf, magf, fluxf = pycalipso.magANDfluxes(WAVELENGHTS, N_W, N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, wv, fv, nv,
                                                            dlum, ncell, ncell, flux_cell, area_arc)
-                SBf[fluxf==0.] = np.nan 
+                sbf[fluxf==0.] = np.nan 
                 magf[fluxf==0.] = np.nan
 
                 # Third: same quantities but for each cell and "visibility" CONSIDERING DOPPLER SHIFT
@@ -849,7 +847,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 # FIRST: LINEAR INTERPOLATION OF THE FLUX IN THE GRID
 
                 flux_interp = RegularGridInterpolator((grid_centers, grid_centers), fluxf[:,:, 1], method='linear')
-                flux_interpolated = flux_interp((X_grid_interp, Y_grid_interp))
+                flux_interpolated = flux_interp((x_meshgrid_interp, y_meshgrid_interp))
 
                 # COMPARE INTERPOLATED FLUX WITH THE ORIGINAL ONE
                 n, eps = galaxy_image_fit.photutils_fit(rad05[ihal]*1e3, 0., 2*rad05[ihal]*1e3, res_interp, flux_2D = flux_interpolated)
@@ -860,10 +858,10 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 lum_g[ihal] += lumtotg
                 lum_r[ihal] += lumtotr
                 lum_i[ihal] += lumtoti
-                sb_u[ihal] += SBu_tot
-                sb_g[ihal] += SBg_tot
-                sb_r[ihal] += SBr_tot
-                sb_i[ihal] += SBi_tot
+                sb_u[ihal] += sb_u_tot
+                sb_g[ihal] += sb_g_tot
+                sb_r[ihal] += sb_r_tot
+                sb_i[ihal] += sb_i_tot
                 ur_color[ihal] += ur
                 gr_color[ihal] += gr
                 if n>0.:
@@ -883,7 +881,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 for i_f in range(N_F):
                     file_image_array_x[1:, i_f] = magf[:,:,i_f].reshape((ncell*ncell))
                     file_image_array_x[1:, N_F+i_f] = fluxf[:,:,i_f].reshape((ncell*ncell))
-                    file_image_array_x[1:, 2*N_F+i_f] = SBf[:,:,i_f].reshape((ncell*ncell))
+                    file_image_array_x[1:, 2*N_F+i_f] = sbf[:,:,i_f].reshape((ncell*ncell))
                 np.save(file_image_x, file_image_array_x)
 
                 #########################################################################################
@@ -923,18 +921,18 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 area_halo_pys = area_halo_com/((1.+zeta)*(1.+zeta)) # physical area of the halo in kpc^2
                 area_halo_arc = area_halo_pys/(arcsec2kpc*arcsec2kpc) # physical area of the halo in arcsec^2
 
-                SBu_tot = fmag_tot[0]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 u filter
-                SBg_tot = fmag_tot[1]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 g filter
-                SBr_tot = fmag_tot[2]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 r filter
-                SBi_tot = fmag_tot[3]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 i filter
+                sb_u_tot = fmag_tot[0]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 u filter
+                sb_g_tot = fmag_tot[1]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 g filter
+                sb_r_tot = fmag_tot[2]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 r filter
+                sb_i_tot = fmag_tot[3]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 i filter
 
                 gr = fmag_tot[1]-fmag_tot[2] # color g-r
                 ur = fmag_tot[0]-fmag_tot[2] # color u-r
 
                 #Second: same quantities but for each cell and "visibility"
-                SBf, magf, fluxf = pycalipso.magANDfluxes(WAVELENGHTS, N_W, N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, wv, fv, nv,
+                sbf, magf, fluxf = pycalipso.magANDfluxes(WAVELENGHTS, N_W, N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, wv, fv, nv,
                                                            dlum, ncell, ncell, flux_cell, area_arc)
-                SBf[fluxf==0.] = np.nan 
+                sbf[fluxf==0.] = np.nan 
                 magf[fluxf==0.] = np.nan
 
                 # Third: same quantities but for each cell and "visibility" CONSIDERING DOPPLER SHIFT
@@ -947,7 +945,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 # FIRST: LINEAR INTERPOLATION OF THE FLUX IN THE GRID
 
                 flux_interp = RegularGridInterpolator((grid_centers, grid_centers), fluxf[:,:, 1], method='linear')
-                flux_interpolated = flux_interp((X_grid_interp, Y_grid_interp))
+                flux_interpolated = flux_interp((x_meshgrid_interp, y_meshgrid_interp))
 
                 # COMPARE INTERPOLATED FLUX WITH THE ORIGINAL ONE
                 n, eps = galaxy_image_fit.photutils_fit(rad05[ihal]*1e3, 0., 2*rad05[ihal]*1e3, res_interp, flux_2D = flux_interpolated) 
@@ -958,10 +956,10 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 lum_g[ihal] += lumtotg
                 lum_r[ihal] += lumtotr
                 lum_i[ihal] += lumtoti
-                sb_u[ihal] += SBu_tot
-                sb_g[ihal] += SBg_tot
-                sb_r[ihal] += SBr_tot
-                sb_i[ihal] += SBi_tot
+                sb_u[ihal] += sb_u_tot
+                sb_g[ihal] += sb_g_tot
+                sb_r[ihal] += sb_r_tot
+                sb_i[ihal] += sb_i_tot
                 ur_color[ihal] += ur
                 gr_color[ihal] += gr
                 if n>0.:
@@ -981,7 +979,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 for i_f in range(N_F):
                     file_image_array_y[1:, i_f] = magf[:,:,i_f].reshape((ncell*ncell))
                     file_image_array_y[1:, N_F+i_f] = fluxf[:,:,i_f].reshape((ncell*ncell))
-                    file_image_array_y[1:, 2*N_F+i_f] = SBf[:,:,i_f].reshape((ncell*ncell))
+                    file_image_array_y[1:, 2*N_F+i_f] = sbf[:,:,i_f].reshape((ncell*ncell))
                 np.save(file_image_y, file_image_array_y)
 
                 #########################################################################################
@@ -1021,18 +1019,18 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 area_halo_pys = area_halo_com/((1.+zeta)*(1.+zeta)) # physical area of the halo in kpc^2
                 area_halo_arc = area_halo_pys/(arcsec2kpc*arcsec2kpc) # physical area of the halo in arcsec^2
 
-                SBu_tot = fmag_tot[0]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 u filter
-                SBg_tot = fmag_tot[1]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 g filter
-                SBr_tot = fmag_tot[2]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 r filter
-                SBi_tot = fmag_tot[3]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 i filter
+                sb_u_tot = fmag_tot[0]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 u filter
+                sb_g_tot = fmag_tot[1]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 g filter
+                sb_r_tot = fmag_tot[2]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 r filter
+                sb_i_tot = fmag_tot[3]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 i filter
 
                 gr = fmag_tot[1]-fmag_tot[2] # color g-r
                 ur = fmag_tot[0]-fmag_tot[2] # color u-r
 
                 #Second: same quantities but for each cell and "visibility"
-                SBf, magf, fluxf = pycalipso.magANDfluxes(WAVELENGHTS, N_W, N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, wv, fv, nv,
+                sbf, magf, fluxf = pycalipso.magANDfluxes(WAVELENGHTS, N_W, N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, wv, fv, nv,
                                                            dlum, ncell, ncell, flux_cell, area_arc)
-                SBf[fluxf==0.] = np.nan 
+                sbf[fluxf==0.] = np.nan 
                 magf[fluxf==0.] = np.nan
 
                 # Third: same quantities but for each cell and "visibility" CONSIDERING DOPPLER SHIFT
@@ -1045,7 +1043,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 # FIRST: LINEAR INTERPOLATION OF THE FLUX IN THE GRID
 
                 flux_interp = RegularGridInterpolator((grid_centers, grid_centers), fluxf[:,:, 1], method='linear')
-                flux_interpolated = flux_interp((X_grid_interp, Y_grid_interp))
+                flux_interpolated = flux_interp((x_meshgrid_interp, y_meshgrid_interp))
 
                 # COMPARE INTERPOLATED FLUX WITH THE ORIGINAL ONE
                 n, eps = galaxy_image_fit.photutils_fit(rad05[ihal]*1e3, 0., 2*rad05[ihal]*1e3, res_interp, flux_2D = flux_interpolated)
@@ -1056,10 +1054,10 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 lum_g[ihal] += lumtotg
                 lum_r[ihal] += lumtotr
                 lum_i[ihal] += lumtoti
-                sb_u[ihal] += SBu_tot
-                sb_g[ihal] += SBg_tot
-                sb_r[ihal] += SBr_tot
-                sb_i[ihal] += SBi_tot
+                sb_u[ihal] += sb_u_tot
+                sb_g[ihal] += sb_g_tot
+                sb_r[ihal] += sb_r_tot
+                sb_i[ihal] += sb_i_tot
                 ur_color[ihal] += ur
                 gr_color[ihal] += gr
                 if n>0.:
@@ -1079,7 +1077,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 for i_f in range(N_F):
                     file_image_array_z[1:, i_f] = magf[:,:,i_f].reshape((ncell*ncell))
                     file_image_array_z[1:, N_F+i_f] = fluxf[:,:,i_f].reshape((ncell*ncell))
-                    file_image_array_z[1:, 2*N_F+i_f] = SBf[:,:,i_f].reshape((ncell*ncell))
+                    file_image_array_z[1:, 2*N_F+i_f] = sbf[:,:,i_f].reshape((ncell*ncell))
                 np.save(file_image_z, file_image_array_z)            
 
                 ############################################################################################################
