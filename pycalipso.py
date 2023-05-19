@@ -384,6 +384,7 @@ def mean_mesh2D(nx, ny, npart, mass, met, age, vel, tam_i, tam_j):
 
     return num_cell, mass_cell, VCM_malla, sig_cell, twm, tmed, Zwm, Zmed
 
+
 @njit
 def put_particles_in_grid(grid_centers, x, y, z):
     npart = len(x)
@@ -397,3 +398,89 @@ def put_particles_in_grid(grid_centers, x, y, z):
 
     return which_cell_x, which_cell_y, which_cell_z
 
+
+def main(calipso_input, star_particle_data, ncell, vel_LOS, tam_i, tam_j, effective_radius):
+
+    ####### INPUT FORMAT
+
+    # calipso_input = [ CLIGHT, WAVELENGHTS, SSP, 
+    #                     AGE_SPAN, Z_SPAN, MH_SPAN,N_AGES, N_Z, N_W,
+    #                     N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, 
+    #                     W_VEGA, FLUX_VEGA, N_VEGA,
+    #                     I_START, I_END, DISP, LUMG,
+    #                     zeta, dlum, arcsec2kpc, area_arc ]
+
+    # star_particle_data = [npart, mass, met, age]
+
+    # ncell is the number of cells in each direction (x,y,z)
+    # vel_LOS is the line of sight velocity of each particle
+    # tam_i, tam_j are the particle indices in the grid for each particle
+    # effective_radius is the effective radius of the galaxy in kpc
+
+    [CLIGHT, WAVELENGHTS, SSP, 
+     AGE_SPAN, Z_SPAN, MH_SPAN, N_AGES, N_Z, N_W, 
+     N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, 
+     W_VEGA, FLUX_VEGA, N_VEGA, 
+     I_START, I_END, DISP, LUMG, 
+     zeta, dlum, arcsec2kpc, area_arc] = calipso_input
+
+    [npart, mass, met, age] = star_particle_data
+
+
+    # Mean cell properties in each projection
+    num_cell, mass_cell, vel_malla, sig_cell, twm, tmed, Zwm, Zmed = mean_mesh2D(ncell, ncell, npart, 
+                                                                                 mass, met, age, 
+                                                                                 vel_LOS, tam_i, tam_j)
+    # Finding fluxes in each cell and luminosity weighted quantities
+    (flux_cell, flux_cell_sig, fluxtot, vell_malla, 
+    sigl_malla, lum_malla, twl, Zwl, vell2_malla) = make_light(npart, mass, age, 
+                                                                met, WAVELENGHTS, 
+                                                                SSP, AGE_SPAN, Z_SPAN,
+                                                                N_W, I_START, I_END, DISP, 
+                                                                LUMG, tam_i, tam_j, 
+                                                                vel_LOS, ncell, ncell, 
+                                                                mass_cell, CLIGHT)
+    
+    # Magnitudes and fluxes through filters in each cell. Images.
+    # First: total quantities
+    fmag_tot = np.zeros(N_F)
+    flux_tot = np.zeros(N_F)
+    mag_v1_0(WAVELENGHTS, fluxtot, N_W, fmag_tot, flux_tot, 
+             N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, 
+             W_VEGA, FLUX_VEGA, N_VEGA, dlum) 
+    
+    lumtotu = flux_tot[0]
+    lumtotg = flux_tot[1]
+    lumtotr = flux_tot[2]
+    lumtoti = flux_tot[3]
+
+    area_halo_com = np.pi*effective_radius**2 # comoving area of the halo in kpc^2
+    area_halo_pys = area_halo_com/((1.+zeta)*(1.+zeta)) # physical area of the halo in kpc^2
+    area_halo_arc = area_halo_pys/(arcsec2kpc*arcsec2kpc) # physical area of the halo in arcsec^2
+
+    sb_u_tot = fmag_tot[0]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 u filter
+    sb_g_tot = fmag_tot[1]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 g filter
+    sb_r_tot = fmag_tot[2]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 r filter
+    sb_i_tot = fmag_tot[3]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 i filter
+
+    gr = fmag_tot[1]-fmag_tot[2] # color g-r
+    ur = fmag_tot[0]-fmag_tot[2] # color u-r
+
+    #Second: same quantities but for each cell and "visibility"
+    sbf, magf, fluxf = magANDfluxes(WAVELENGHTS, N_W, N_F, N_LINES_FILTERS, 
+                                    W_FILTERS, RESPONSE_FILTERS, W_VEGA, FLUX_VEGA, N_VEGA,
+                                    dlum, ncell, ncell, flux_cell, area_arc)
+    sbf[fluxf==0.] = np.nan 
+    magf[fluxf==0.] = np.nan
+
+    # Third: same quantities but for each cell and "visibility" CONSIDERING DOPPLER SHIFT
+    # SBfdoppler, magfdoppler, fluxfdoppler = pycalipso.magANDfluxes(wavelenghts, nw, nf, nlf, wf, rf, wv, fv, nv,
+    #                                                                 dlum, ncell, ncell, flux_cell_sig, area_arc)
+    # SBfdoppler[fluxfdoppler==0.] = np.nan
+    # magfdoppler[fluxfdoppler==0.] = np.nan
+
+    return (fluxtot,
+            lumtotu, lumtotg, lumtotr, lumtoti, 
+            sb_u_tot, sb_g_tot, sb_r_tot, sb_i_tot, 
+            gr, ur,
+            sbf, magf, fluxf)

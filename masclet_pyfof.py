@@ -232,35 +232,36 @@ if CALIPSO_FLAG:
     print('Before FoF, reading calipso files..')
     WAVELENGHTS, SSP, AGE_SPAN, Z_SPAN, MH_SPAN, N_AGES, N_Z, N_W = pycalipso.readSSPfiles(DIRSSP, L_START, L_END)
     N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS = pycalipso.readFilters()
-    wv, fv, nv = pycalipso.readVega(ZP_5556)
+    W_VEGA, FLUX_VEGA, N_VEGA = pycalipso.readVega(ZP_5556)
     print('.. done')
     dlum=1.e-5 #10 pc --> absolute mag
     magssp = np.zeros((N_AGES,N_Z,N_F))
     fluxssp = np.zeros((N_AGES,N_Z,N_F))
-    lumu = np.zeros((N_AGES,N_Z))
-    lumg = np.zeros((N_AGES,N_Z))
-    lumr = np.zeros((N_AGES,N_Z))
-    lumi = np.zeros((N_AGES,N_Z))
+    LUMU = np.zeros((N_AGES,N_Z))
+    LUMG = np.zeros((N_AGES,N_Z))
+    LUMR = np.zeros((N_AGES,N_Z))
+    LUMI = np.zeros((N_AGES,N_Z))
     # HERE WE CALCULATE ABSOLUTE MAGNITUDES (SINCE DLUM = 1 PC) AND THUS LUMINOSITIES
     # Calculating luminosity in u,g,r filters of each SSP
     for iage in range(N_AGES):
         for iZ in range(N_Z):
             pycalipso.mag_v1_0(WAVELENGHTS, SSP[iage, iZ, :], N_W, magssp[iage, iZ, :],
-                                fluxssp[iage, iZ, :], N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, wv, fv, nv, dlum)
+                                fluxssp[iage, iZ, :], N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, W_VEGA, FLUX_VEGA, N_VEGA, dlum)
             
-            lumu[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 0]-USUN)) #luminosity in u filter (U band more or less)
-            lumg[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 1]-GSUN)) #luminosity in g filter (B band more or less)
-            lumr[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 2]-RSUN)) #luminosity in r filter (R band more or less)
-            lumi[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 3]-ISUN)) #luminosity in i filter (I band more or less)
+            LUMU[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 0]-USUN)) #luminosity in u filter (U band more or less)
+            LUMG[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 1]-GSUN)) #luminosity in g filter (B band more or less)
+            LUMR[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 2]-RSUN)) #luminosity in r filter (R band more or less)
+            LUMI[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 3]-ISUN)) #luminosity in i filter (I band more or less)
 
             
-    closest_start = np.abs(L_START/WAVELENGHTS - 1)
-    closest_end = np.abs(L_END/WAVELENGHTS - 1)
-    I_START = np.argmin(closest_start) 
-    I_END = np.argmin(closest_end) 
+    CLOSEST_START = np.abs(L_START/WAVELENGHTS - 1)
+    CLOSEST_END = np.abs(L_END/WAVELENGHTS - 1)
+    I_START = np.argmin(CLOSEST_START) 
+    I_END = np.argmin(CLOSEST_END) 
 
     print('Spectrum will be written in the range:', WAVELENGHTS[I_START], WAVELENGHTS[I_END], '(A)')
     DISP=WAVELENGHTS[2]-WAVELENGHTS[1] #resolución espectral
+
     print('*************************************')
     print()
     print()
@@ -383,34 +384,40 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         which_cell_list_y = []
         which_cell_list_z = []
         for ihal in tqdm(range(len(groups))):
+            # Particle indices, center of mass and mass
             part_list = np.array(groups[ihal])
             cx, cy, cz, mass = halo_properties.center_of_mass(part_list, st_x, st_y, st_z, st_mass)
-            #Create 3D grid with cellsize 2*LL for cleaning
+
+            #Create 3D grid with cellsize 2*LL for cleaning. Calculate most distant particle to center of mass
             most_distant_r = halo_properties.furthest_particle(cx, cy, cz, part_list, st_x, st_y, st_z)
-            grid = np.arange(-(most_distant_r+LL), most_distant_r+LL, 2*LL)
+            grid = np.arange(- ( most_distant_r + LL ), most_distant_r + LL, 2*LL)
             n_cell = len(grid)
             vcm_cell = np.zeros((n_cell, n_cell, n_cell, 3))
             mass_cell = np.zeros((n_cell, n_cell, n_cell))
             quantas_cell = np.zeros((n_cell, n_cell, n_cell))
             sig3D_cell = np.zeros((n_cell, n_cell, n_cell))
+
             #CALCULATE cell quantities
-            vcm_cell, mass_cell, quantas_cell, sig3D_cell, which_cell_x, which_cell_y, which_cell_z = halo_properties.calc_cell(cx, cy, cz, grid, part_list, st_x, 
-                                                                                                                                st_y, st_z, st_vx, st_vy, 
-                                                                                                                                st_vz, st_mass, vcm_cell, 
-                                                                                                                                mass_cell, quantas_cell, 
-                                                                                                                                sig3D_cell)
+            (vcm_cell, mass_cell, quantas_cell, sig3D_cell, 
+             which_cell_x, which_cell_y, which_cell_z) = halo_properties.calc_cell(cx, cy, cz, grid, part_list, 
+                                                                                   st_x, st_y, st_z, st_vx, st_vy, st_vz, 
+                                                                                   st_mass, vcm_cell, mass_cell, quantas_cell, sig3D_cell)
             
             #DO THE CLEANING: Right CM, Mass and Furthest particle
-            cx, cy, cz, mass, most_distant_r, control, which_cell_x, which_cell_y, which_cell_z = halo_properties.clean_cell(cx, cy, cz, mass, most_distant_r, grid, part_list, st_x, st_y, 
-                                                                                                                st_z, st_vx, st_vy, st_vz, st_mass, vcm_cell,
-                                                                                                                mass_cell, quantas_cell, sig3D_cell, LL, Q_FIL, SIG_FIL,
-                                                                                                                which_cell_x, which_cell_y, which_cell_z)
+            (cx, cy, cz, mass, 
+             most_distant_r, control,
+             which_cell_x, which_cell_y, which_cell_z) = halo_properties.clean_cell(cx, cy, cz, mass, most_distant_r, grid, part_list, st_x, st_y, 
+                                                                                    st_z, st_vx, st_vy, st_vz, st_mass, vcm_cell,
+                                                                                    mass_cell, quantas_cell, sig3D_cell, LL, Q_FIL, SIG_FIL,
+                                                                                    which_cell_x, which_cell_y, which_cell_z)
 
-            #CLEANING DONE
+            #CLEANING DONE --> CALCULATE AGAIN CENTER OF MASS AND MASS
             control = control.astype(bool)
             npart = len(part_list[control])
             cx, cy, cz, mass = halo_properties.center_of_mass(part_list[control], st_x, st_y, st_z, st_mass)
             most_distant_r = halo_properties.furthest_particle(cx, cy, cz, part_list[control], st_x, st_y, st_z)
+
+            #If after cleaning there are more than MINP particles, save the halo
             if npart > MINP:
                 center_x.append(cx)
                 center_y.append(cy)
@@ -424,6 +431,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 which_cell_list_y.append(which_cell_y)
                 which_cell_list_z.append(which_cell_z)
 
+        #From list to arrays for convenience
         center_x = np.array(center_x)
         center_y = np.array(center_y)
         center_z = np.array(center_z)
@@ -442,6 +450,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
 
         print()
         print('Calculating properties')
+
         #CALCULATE HALO PROPERTIES
         rad05 = np.zeros(num_halos)
         rad05_x = np.zeros(num_halos)
@@ -477,6 +486,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         cold_bound_gas_fractions = np.zeros(num_halos)
         cold_unbound_gas_masses = np.zeros(num_halos)
         hot_unbound_gas_masses = np.zeros(num_halos)
+
         for ihal in tqdm(range(num_halos)):
             #HALO PARTICLE INDICES
             part_list = new_groups[ihal]
@@ -514,9 +524,9 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
              specific_angular_momentum_z[ihal]) = halo_properties.angular_momentum(mass, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, 
                                                                                    cx, cy, cz, velocities_x[ihal], velocities_y[ihal], velocities_z[ihal])
             
-            specific_angular_momentum[ihal] = (specific_angular_momentum_x[ihal]**2 + 
-                                               specific_angular_momentum_y[ihal]**2 + 
-                                               specific_angular_momentum_z[ihal]**2)**0.5
+            specific_angular_momentum[ihal] = ( specific_angular_momentum_x[ihal]**2 + 
+                                                specific_angular_momentum_y[ihal]**2 + 
+                                                specific_angular_momentum_z[ihal]**2 )**0.5
             
             #SHAPE
             (s_axis_major[ihal], 
@@ -737,13 +747,23 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             cosmo = cosmology.FlatLambdaCDM(H0=ACHE*100, Om0=OMEGA0)
             dlum = abs(cosmo.luminosity_distance(zeta).value)
             daa = abs(cosmo.angular_diameter_distance(zeta).value) # if zeta < 0, not defined
-            arcsec2kpc=daa*1.e3*(acos(-1)/180.)/3600.
+            arcsec2kpc = daa*1e3*(acos(-1)/180.)/3600. #from angular size to kpc
             # Area of pixel in arcsec^2
-            area_com=(LL*LL)
+            res = LL*1e3 # resolution of the grid in kpc
+            area_com = res * res
             area_pys=area_com/((1.+zeta)*(1.+zeta))
             area_arc=area_pys/(arcsec2kpc*arcsec2kpc)
             print('zeta, dist_lum, arcsec2kpc:', zeta, dlum, arcsec2kpc)
             print()
+
+            # List with calipso input to pass to pycalipso.main
+            calipso_input = [ CLIGHT, WAVELENGHTS, SSP, 
+                              AGE_SPAN, Z_SPAN, MH_SPAN,N_AGES, N_Z, N_W,
+                              N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, 
+                              W_VEGA, FLUX_VEGA, N_VEGA,
+                              I_START, I_END, DISP, LUMG,
+                              zeta, dlum, arcsec2kpc, area_arc ]
+
             print('Calculating SEDs of the galaxies')
             for ihal in tqdm(range(num_halos)):
                 npart = num_particles[ihal] # number of particles in the halo
@@ -768,7 +788,6 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 # max_level = np.max(patch_level[which_patches])
                 # res_minimum_cell = L / nx / 2**max_level * 1e3 # maximum resolution of the simulation in kpc
 
-                res = LL*1e3 #2*res_minimum_cell # resolution of the grid in kpc
                 grid_edges = np.arange(-rmax[ihal]*1e3 - res, rmax[ihal]*1e3 + res, res)
                 grid_centers = (grid_edges[1:] + grid_edges[:-1]) / 2
                 ncell = len(grid_centers)  # number of cells in each direction
@@ -779,6 +798,11 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 grid_interp_edges = np.arange(grid_centers[0], grid_centers[-1], res_interp)
                 grid_interp = (grid_interp_edges[1:] + grid_interp_edges[:-1]) / 2
                 x_meshgrid_interp, y_meshgrid_interp = np.meshgrid(grid_interp, grid_interp)
+
+                
+                # List with star particle data to pass to pycalipso.main
+                star_particle_data = [npart, mass, met, age]
+
 
                 ############################################################################################################
                 ############################################################################################################
@@ -794,54 +818,14 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 tam_i = which_cell_x
                 tam_j = which_cell_y
                 vel_LOS = velz
-                # Mean cell properties in each projection
-                num_cell, mass_cell, vel_malla, sig_cell, twm, tmed, Zwm, Zmed = pycalipso.mean_mesh2D(ncell, ncell, npart, 
-                                                                                                       mass, met, age, 
-                                                                                                       vel_LOS, tam_i, tam_j)
-                # Finding fluxes in each cell and luminosity weighted quantities
-                (flux_cell, flux_cell_sig, fluxtot, vell_malla, 
-                sigl_malla, lum_malla, twl, Zwl, vell2_malla) = pycalipso.make_light(npart, mass, age, 
-                                                                                    met, WAVELENGHTS, 
-                                                                                    SSP, AGE_SPAN, Z_SPAN,
-                                                                                    N_W, I_START, I_END, DISP, 
-                                                                                    lumg, tam_i, tam_j, 
-                                                                                    vel_LOS, ncell, ncell, 
-                                                                                    mass_cell, CLIGHT)
-                
-                # Magnitudes and fluxes through filters in each cell. Images.
-                # First: total quantities
-                fmag_tot = np.zeros(N_F)
-                flux_tot = np.zeros(N_F)
-                pycalipso.mag_v1_0(WAVELENGHTS, fluxtot, N_W, fmag_tot, flux_tot, N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, wv, fv, nv, dlum) 
-                
-                lumtotu = flux_tot[0]
-                lumtotg = flux_tot[1]
-                lumtotr = flux_tot[2]
-                lumtoti = flux_tot[3]
+                effective_radius = rad05_z[ihal]*1e3
 
-                area_halo_com = np.pi*rad05[ihal]**2 # comoving area of the halo in kpc^2
-                area_halo_pys = area_halo_com/((1.+zeta)*(1.+zeta)) # physical area of the halo in kpc^2
-                area_halo_arc = area_halo_pys/(arcsec2kpc*arcsec2kpc) # physical area of the halo in arcsec^2
-
-                sb_u_tot = fmag_tot[0]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 u filter
-                sb_g_tot = fmag_tot[1]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 g filter
-                sb_r_tot = fmag_tot[2]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 r filter
-                sb_i_tot = fmag_tot[3]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 i filter
-
-                gr = fmag_tot[1]-fmag_tot[2] # color g-r
-                ur = fmag_tot[0]-fmag_tot[2] # color u-r
-
-                #Second: same quantities but for each cell and "visibility"
-                sbf, magf, fluxf = pycalipso.magANDfluxes(WAVELENGHTS, N_W, N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, wv, fv, nv,
-                                                           dlum, ncell, ncell, flux_cell, area_arc)
-                sbf[fluxf==0.] = np.nan 
-                magf[fluxf==0.] = np.nan
-
-                # Third: same quantities but for each cell and "visibility" CONSIDERING DOPPLER SHIFT
-                # SBfdoppler, magfdoppler, fluxfdoppler = pycalipso.magANDfluxes(wavelenghts, nw, nf, nlf, wf, rf, wv, fv, nv,
-                #                                                                 dlum, ncell, ncell, flux_cell_sig, area_arc)
-                # SBfdoppler[fluxfdoppler==0.] = np.nan
-                # magfdoppler[fluxfdoppler==0.] = np.nan
+                (   fluxtot,
+                    lumtotu, lumtotg, lumtotr, lumtoti, 
+                    sb_u_tot, sb_g_tot, sb_r_tot, sb_i_tot, 
+                    gr, ur,
+                    sbf, magf, fluxf    )  = pycalipso.main(calipso_input, star_particle_data, 
+                                                        ncell, vel_LOS, tam_i, tam_j, effective_radius)
 
                 # SÉRSIC INDEX WITH LIGHT (g filter SDSS)
                 # FIRST: LINEAR INTERPOLATION OF THE FLUX IN THE GRID
@@ -850,7 +834,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 flux_interpolated = flux_interp((x_meshgrid_interp, y_meshgrid_interp))
 
                 # COMPARE INTERPOLATED FLUX WITH THE ORIGINAL ONE
-                n, eps = galaxy_image_fit.photutils_fit(rad05[ihal]*1e3, 0., 2*rad05[ihal]*1e3, res_interp, flux_2D = flux_interpolated)
+                n, eps = galaxy_image_fit.photutils_fit(effective_radius, 0., 2*effective_radius, res_interp, flux_2D = flux_interpolated)
 
                 # SAVE DATA
                 # FIRST, THE CATALOGUE
@@ -893,62 +877,23 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 tam_i = which_cell_x
                 tam_j = which_cell_z
                 vel_LOS = vely
-                # Mean cell properties in each projection
-                num_cell, mass_cell, vel_malla, sig_cell, twm, tmed, Zwm, Zmed = pycalipso.mean_mesh2D(ncell, ncell, npart, 
-                                                                                                       mass, met, age, 
-                                                                                                       vel_LOS, tam_i, tam_j)
-                # Finding fluxes in each cell and luminosity weighted quantities
-                (flux_cell, flux_cell_sig, fluxtot, vell_malla, 
-                sigl_malla, lum_malla, twl, Zwl, vell2_malla) = pycalipso.make_light(npart, mass, age, 
-                                                                                    met, WAVELENGHTS, 
-                                                                                    SSP, AGE_SPAN, Z_SPAN,
-                                                                                    N_W, I_START, I_END, DISP, 
-                                                                                    lumg, tam_i, tam_j, 
-                                                                                    vel_LOS, ncell, ncell, 
-                                                                                    mass_cell, CLIGHT)                
-                # Magnitudes and fluxes through filters in each cell. Images.
-                # First: total quantities
-                fmag_tot = np.zeros(N_F)
-                flux_tot = np.zeros(N_F)
-                pycalipso.mag_v1_0(WAVELENGHTS, fluxtot, N_W, fmag_tot, flux_tot, N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, wv, fv, nv, dlum) 
+                effective_radius = rad05_y[ihal]*1e3
+
+                (   fluxtot,
+                    lumtotu, lumtotg, lumtotr, lumtoti,
+                    sb_u_tot, sb_g_tot, sb_r_tot, sb_i_tot,
+                    gr, ur,
+                    sbf, magf, fluxf    )  = pycalipso.main(calipso_input, star_particle_data,
+                                                        ncell, vel_LOS, tam_i, tam_j, effective_radius)
                 
-                lumtotu = flux_tot[0]
-                lumtotg = flux_tot[1]
-                lumtotr = flux_tot[2]
-                lumtoti = flux_tot[3]
-
-                area_halo_com = np.pi*rad05[ihal]**2 # comoving area of the halo in kpc^2
-                area_halo_pys = area_halo_com/((1.+zeta)*(1.+zeta)) # physical area of the halo in kpc^2
-                area_halo_arc = area_halo_pys/(arcsec2kpc*arcsec2kpc) # physical area of the halo in arcsec^2
-
-                sb_u_tot = fmag_tot[0]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 u filter
-                sb_g_tot = fmag_tot[1]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 g filter
-                sb_r_tot = fmag_tot[2]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 r filter
-                sb_i_tot = fmag_tot[3]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 i filter
-
-                gr = fmag_tot[1]-fmag_tot[2] # color g-r
-                ur = fmag_tot[0]-fmag_tot[2] # color u-r
-
-                #Second: same quantities but for each cell and "visibility"
-                sbf, magf, fluxf = pycalipso.magANDfluxes(WAVELENGHTS, N_W, N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, wv, fv, nv,
-                                                           dlum, ncell, ncell, flux_cell, area_arc)
-                sbf[fluxf==0.] = np.nan 
-                magf[fluxf==0.] = np.nan
-
-                # Third: same quantities but for each cell and "visibility" CONSIDERING DOPPLER SHIFT
-                # SBfdoppler, magfdoppler, fluxfdoppler = pycalipso.magANDfluxes(wavelenghts, nw, nf, nlf, wf, rf, wv, fv, nv,
-                #                                                                 dlum, ncell, ncell, flux_cell_sig, area_arc)
-                # SBfdoppler[fluxfdoppler==0.] = np.nan
-                # magfdoppler[fluxfdoppler==0.] = np.nan
 
                 # SÉRSIC INDEX WITH LIGHT (g filter SDSS)
                 # FIRST: LINEAR INTERPOLATION OF THE FLUX IN THE GRID
-
                 flux_interp = RegularGridInterpolator((grid_centers, grid_centers), fluxf[:,:, 1], method='linear')
                 flux_interpolated = flux_interp((x_meshgrid_interp, y_meshgrid_interp))
 
                 # COMPARE INTERPOLATED FLUX WITH THE ORIGINAL ONE
-                n, eps = galaxy_image_fit.photutils_fit(rad05[ihal]*1e3, 0., 2*rad05[ihal]*1e3, res_interp, flux_2D = flux_interpolated) 
+                n, eps = galaxy_image_fit.photutils_fit(effective_radius, 0., 2*effective_radius, res_interp, flux_2D = flux_interpolated) 
 
                 # SAVE DATA
                 # FIRST, THE CATALOGUE
@@ -991,54 +936,15 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 tam_i = which_cell_y
                 tam_j = which_cell_z
                 vel_LOS = velx
-                # Mean cell properties in each projection
-                num_cell, mass_cell, vel_malla, sig_cell, twm, tmed, Zwm, Zmed = pycalipso.mean_mesh2D(ncell, ncell, npart, 
-                                                                                                       mass, met, age, 
-                                                                                                       vel_LOS, tam_i, tam_j)
-                # Finding fluxes in each cell and luminosity weighted quantities
-                (flux_cell, flux_cell_sig, fluxtot, vell_malla, 
-                sigl_malla, lum_malla, twl, Zwl, vell2_malla) = pycalipso.make_light(npart, mass, age, 
-                                                                                    met, WAVELENGHTS, 
-                                                                                    SSP, AGE_SPAN, Z_SPAN,
-                                                                                    N_W, I_START, I_END, DISP, 
-                                                                                    lumg, tam_i, tam_j, 
-                                                                                    vel_LOS, ncell, ncell, 
-                                                                                    mass_cell, CLIGHT)                
-                # Magnitudes and fluxes through filters in each cell. Images.
-                # First: total quantities
-                fmag_tot = np.zeros(N_F)
-                flux_tot = np.zeros(N_F)
-                pycalipso.mag_v1_0(WAVELENGHTS, fluxtot, N_W, fmag_tot, flux_tot, N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, wv, fv, nv, dlum) 
+                effective_radius = rad05_x[ihal]*1e3
+
+                (   fluxtot,
+                    lumtotu, lumtotg, lumtotr, lumtoti,
+                    sb_u_tot, sb_g_tot, sb_r_tot, sb_i_tot,
+                    gr, ur,
+                    sbf, magf, fluxf    )  = pycalipso.main(calipso_input, star_particle_data,
+                                                            ncell, vel_LOS, tam_i, tam_j, effective_radius)
                 
-                lumtotu = flux_tot[0]
-                lumtotg = flux_tot[1]
-                lumtotr = flux_tot[2]
-                lumtoti = flux_tot[3]
-                
-                area_halo_com = np.pi*rad05[ihal]**2 # comoving area of the halo in kpc^2
-                area_halo_pys = area_halo_com/((1.+zeta)*(1.+zeta)) # physical area of the halo in kpc^2
-                area_halo_arc = area_halo_pys/(arcsec2kpc*arcsec2kpc) # physical area of the halo in arcsec^2
-
-                sb_u_tot = fmag_tot[0]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 u filter
-                sb_g_tot = fmag_tot[1]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 g filter
-                sb_r_tot = fmag_tot[2]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 r filter
-                sb_i_tot = fmag_tot[3]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 i filter
-
-                gr = fmag_tot[1]-fmag_tot[2] # color g-r
-                ur = fmag_tot[0]-fmag_tot[2] # color u-r
-
-                #Second: same quantities but for each cell and "visibility"
-                sbf, magf, fluxf = pycalipso.magANDfluxes(WAVELENGHTS, N_W, N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, wv, fv, nv,
-                                                           dlum, ncell, ncell, flux_cell, area_arc)
-                sbf[fluxf==0.] = np.nan 
-                magf[fluxf==0.] = np.nan
-
-                # Third: same quantities but for each cell and "visibility" CONSIDERING DOPPLER SHIFT
-                # SBfdoppler, magfdoppler, fluxfdoppler = pycalipso.magANDfluxes(wavelenghts, nw, nf, nlf, wf, rf, wv, fv, nv,
-                #                                                                 dlum, ncell, ncell, flux_cell_sig, area_arc)
-                # SBfdoppler[fluxfdoppler==0.] = np.nan
-                # magfdoppler[fluxfdoppler==0.] = np.nan
-
                 # SÉRSIC INDEX WITH LIGHT (g filter SDSS)
                 # FIRST: LINEAR INTERPOLATION OF THE FLUX IN THE GRID
 
@@ -1046,7 +952,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 flux_interpolated = flux_interp((x_meshgrid_interp, y_meshgrid_interp))
 
                 # COMPARE INTERPOLATED FLUX WITH THE ORIGINAL ONE
-                n, eps = galaxy_image_fit.photutils_fit(rad05[ihal]*1e3, 0., 2*rad05[ihal]*1e3, res_interp, flux_2D = flux_interpolated)
+                n, eps = galaxy_image_fit.photutils_fit(effective_radius, 0., 2*effective_radius, res_interp, flux_2D = flux_interpolated)
 
                 # SAVE DATA
                 # FIRST, THE CATALOGUE
@@ -1085,7 +991,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 ############################################################################################################
                 ############################################################################################################
 
-                # AVERAGE OVER THE 3 PROJECTIONS
+                # AVERAGE OVER 3 PROJECTIONS
                 lum_u[ihal] /= 3.
                 lum_g[ihal] /= 3.
                 lum_r[ihal] /= 3.
@@ -1100,8 +1006,6 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                     sersic_index_lum[ihal] /= sersic_counter[ihal]
                 else:
                     sersic_index_lum[ihal] = np.nan
-
-
 
     else:
         print('No stars found!!')
