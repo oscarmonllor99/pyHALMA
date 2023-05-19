@@ -52,45 +52,45 @@ FILE
 with open('masclet_pyfof.dat', 'r') as f:
     f.readline() # MAIN BLOCK
     f.readline()
-    first,last,step = np.array(f.readline().split()[0].split(','), dtype = np.int32)
+    FIRST,LAST,STEP = np.array(f.readline().split()[0].split(','), dtype = np.int32)
     f.readline()
-    nx, ny, nz = np.array(f.readline().split()[0].split(','), dtype = np.int32)
+    NX, NY, NZ = np.array(f.readline().split()[0].split(','), dtype = np.int32)
     f.readline()
-    ache, omega0, t0 =  np.array(f.readline().split()[0].split(','), dtype = np.float64)
+    ACHE, OMEGA0, T0 =  np.array(f.readline().split()[0].split(','), dtype = np.float64)
     f.readline()
-    z0, L = np.array(f.readline().split()[0].split(','), dtype = np.float64)
+    Z0, L = np.array(f.readline().split()[0].split(','), dtype = np.float64)
     f.readline()
-    ll, =  np.array(f.readline().split()[0].split(','), dtype = np.float64)
+    LL, =  np.array(f.readline().split()[0].split(','), dtype = np.float64)
     f.readline()
-    minp, =  np.array(f.readline().split()[0].split(','), dtype = np.int32)
+    MINP, =  np.array(f.readline().split()[0].split(','), dtype = np.int32)
     f.readline()
-    sig_fil, q_fil = np.array(f.readline().split()[0].split(','), dtype = np.float64)
+    SIG_FIL, Q_FIL = np.array(f.readline().split()[0].split(','), dtype = np.float64)
     f.readline()
-    old_masclet = bool(int(f.readline()))
+    OLD_MASCLET = bool(int(f.readline()))
     f.readline()
-    write_particles = bool(int(f.readline()))
+    WRITE_PARTICLES = bool(int(f.readline()))
     f.readline()
-    rps_flag = bool(int(f.readline()))
+    RPS_FLAG = bool(int(f.readline()))
     f.readline()
-    catalogue_name = f.readline()[:-1]
+    CATALOGUE_NAME = f.readline()[:-1]
     f.readline()
-    ncore = int(f.readline())
+    NCORE = int(f.readline())
     f.readline()
     f.readline() #CALIPSO BLOCK
     f.readline()
-    calipso_flag = bool(int(f.readline()))
+    CALIPSO_FLAG = bool(int(f.readline()))
     f.readline()
-    zp_5556 = float(f.readline())
+    ZP_5556 = float(f.readline())
     f.readline()
-    SB_lim = float(f.readline())
+    SB_LIM = float(f.readline())
     f.readline()
-    clight = float(f.readline())
+    CLIGHT = float(f.readline())
     f.readline() 
-    usun, gsun, rsun, isun = np.array(f.readline().split()[0].split(','), dtype = np.float64)
+    USUN, GSUN, RSUN, ISUN = np.array(f.readline().split()[0].split(','), dtype = np.float64)
     f.readline()
-    metsun = float(f.readline())
+    METSUN = float(f.readline())
     f.readline()
-    lstart, lend = np.array(f.readline().split()[0].split(','), dtype = np.float64)
+    L_START, L_END = np.array(f.readline().split()[0].split(','), dtype = np.float64)
 
 
 
@@ -109,7 +109,7 @@ with open('masclet_pyfof.dat', 'r') as f:
 def good_groups(groups):
     good_index = np.zeros((len(groups), ), dtype = bool)  
     for ig in range(len(groups)):
-        if len(groups[ig]) >= minp:
+        if len(groups[ig]) >= MINP:
             good_index[ig] = True
     return good_index
 
@@ -225,45 +225,45 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
 ########## ########## ########## ########## ########## 
 ########## ########## ########## ########## ########## 
 
-dirssp = 'E-MILES'
+DIRSSP = 'E-MILES'
 
 ########## ########## ########## ########## ##########
 ### CALIPSO BLOCK
 ########## ########## ########## ########## ##########
-if calipso_flag:
+if CALIPSO_FLAG:
     print('*************************************')
     print('Before FoF, reading calipso files..')
-    wavelenghts, SSP, age_span, Z_span, MH_span, nages, nZ, nw = pycalipso.readSSPfiles(dirssp, lstart, lend)
-    nf, nlf, wf, rf = pycalipso.readFilters()
-    wv, fv, nv = pycalipso.readVega(zp_5556)
+    WAVELENGHTS, SSP, AGE_SPAN, Z_SPAN, MH_SPAN, N_AGES, N_Z, N_W = pycalipso.readSSPfiles(DIRSSP, L_START, L_END)
+    N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS = pycalipso.readFilters()
+    wv, fv, nv = pycalipso.readVega(ZP_5556)
     print('.. done')
     dlum=1.e-5 #10 pc --> absolute mag
-    magssp = np.zeros((nages,nZ,nf))
-    fluxssp = np.zeros((nages,nZ,nf))
-    lumu = np.zeros((nages,nZ))
-    lumg = np.zeros((nages,nZ))
-    lumr = np.zeros((nages,nZ))
-    lumi = np.zeros((nages,nZ))
+    magssp = np.zeros((N_AGES,N_Z,N_F))
+    fluxssp = np.zeros((N_AGES,N_Z,N_F))
+    lumu = np.zeros((N_AGES,N_Z))
+    lumg = np.zeros((N_AGES,N_Z))
+    lumr = np.zeros((N_AGES,N_Z))
+    lumi = np.zeros((N_AGES,N_Z))
     # HERE WE CALCULATE ABSOLUTE MAGNITUDES (SINCE DLUM = 1 PC) AND THUS LUMINOSITIES
     # Calculating luminosity in u,g,r filters of each SSP
-    for iage in range(nages):
-        for iZ in range(nZ):
-            pycalipso.mag_v1_0(wavelenghts, SSP[iage, iZ, :], nw, magssp[iage, iZ, :],
-                                fluxssp[iage, iZ, :], nf, nlf, wf, rf, wv, fv, nv, dlum)
+    for iage in range(N_AGES):
+        for iZ in range(N_Z):
+            pycalipso.mag_v1_0(WAVELENGHTS, SSP[iage, iZ, :], N_W, magssp[iage, iZ, :],
+                                fluxssp[iage, iZ, :], N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, wv, fv, nv, dlum)
             
-            lumu[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 0]-usun)) #luminosity in u filter (U band more or less)
-            lumg[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 1]-gsun)) #luminosity in g filter (B band more or less)
-            lumr[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 2]-rsun)) #luminosity in r filter (R band more or less)
-            lumi[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 3]-isun)) #luminosity in i filter (I band more or less)
+            lumu[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 0]-USUN)) #luminosity in u filter (U band more or less)
+            lumg[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 1]-GSUN)) #luminosity in g filter (B band more or less)
+            lumr[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 2]-RSUN)) #luminosity in r filter (R band more or less)
+            lumi[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 3]-ISUN)) #luminosity in i filter (I band more or less)
 
             
-    closest_start = np.abs(lstart/wavelenghts - 1)
-    closest_end = np.abs(lend/wavelenghts - 1)
-    istart = np.argmin(closest_start) 
-    iend = np.argmin(closest_end) 
+    closest_start = np.abs(L_START/WAVELENGHTS - 1)
+    closest_end = np.abs(L_END/WAVELENGHTS - 1)
+    I_START = np.argmin(closest_start) 
+    I_END = np.argmin(closest_end) 
 
-    print('Spectrum will be written in the range:', wavelenghts[istart], wavelenghts[iend], '(A)')
-    disp=wavelenghts[2]-wavelenghts[1] #resolución espectral
+    print('Spectrum will be written in the range:', WAVELENGHTS[I_START], WAVELENGHTS[I_END], '(A)')
+    DISP=WAVELENGHTS[2]-WAVELENGHTS[1] #resolución espectral
     print('*************************************')
     print()
     print()
@@ -273,21 +273,21 @@ if calipso_flag:
 ########## ########## ########## ########## ##########
 
 
-path_results = 'simu_masclet'
+PATH_RESULTS = 'simu_masclet'
 
-re0 = 1.0  #factor de escala a z = 0
+RE0 = 1.0  #factor de escala a z = 0
 
 print('****************************************************')
 print('******************** MASCLET pyfof *****************')
 print('****************************************************')
 print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
-print('CHECK!!!! --> LINKING LENGHT (kpc)', ll*1e3)
+print('CHECK!!!! --> LINKING LENGHT (kpc)', LL*1e3)
 print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
 print()
 
 ###############################
 if __name__ == '__main__':
-    numba.set_num_threads(ncore)
+    numba.set_num_threads(NCORE)
 ###############################
 
 print('----> Available CPU cores:', numba.config.NUMBA_NUM_THREADS)
@@ -298,8 +298,8 @@ total_halo_data = []
 
 #loop over iterations
 oripas_before = []
-OMM = [] #HALOS PREVIOUS ITERATION
-for it_count, iteration in enumerate(range(first, last+step, step)):
+omm = [] #HALOS PREVIOUS ITERATION
+for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
     print()
     print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
     print('             Iteration', iteration)
@@ -309,13 +309,13 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
     #open MASCLET files
     
     #READ GRID
-    grid_data = read_masclet.read_grids(iteration, path=path_results, parameters_path=path_results, digits=5, 
+    grid_data = read_masclet.read_grids(iteration, path=PATH_RESULTS, parameters_path=PATH_RESULTS, digits=5, 
                                                 read_general=True, read_patchnum=True, read_dmpartnum=False,
                                                 read_patchcellextension=True, read_patchcellposition=True, read_patchposition=True,
                                                 read_patchparent=False)
     cosmo_time = grid_data[1]
     zeta = grid_data[4]
-    rete = re0 / (1.0+zeta)
+    rete = RE0 / (1.0+zeta)
     
     dt = 0.
     if it_count>0:
@@ -325,34 +325,34 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
     print('Redshift (z):', zeta)
 
     #READ GAS IF RPS
-    if rps_flag:
+    if RPS_FLAG:
         print('RPS == True !!!! ')
         print('     Opening grid, clus and DM files')
 
         #READ CLUS
-        gas_data = read_masclet.read_clus(iteration, path=path_results, parameters_path=path_results, digits=5, max_refined_level=1000, output_delta=True, 
+        gas_data = read_masclet.read_clus(iteration, path=PATH_RESULTS, parameters_path=PATH_RESULTS, digits=5, max_refined_level=1000, output_delta=True, 
                                           output_v=True, output_pres=False, output_pot=False, output_opot=False, output_temp=True, output_metalicity=False,
                                           output_cr0amr=True, output_solapst=True, is_mascletB=False, output_B=False, is_cooling=True, verbose=False)
 
 
         #READ DM
-        masclet_dm_data = read_masclet.read_cldm(iteration, path = path_results, parameters_path=path_results, 
+        masclet_dm_data = read_masclet.read_cldm(iteration, path = PATH_RESULTS, parameters_path=PATH_RESULTS, 
                                                     digits=5, max_refined_level=1000, output_deltadm = False,
                                                     output_position=True, output_velocity=False, output_mass=True)
 
 
-    masclet_st_data = read_masclet.read_clst(iteration, path = path_results, parameters_path=path_results, 
+    masclet_st_data = read_masclet.read_clst(iteration, path = PATH_RESULTS, parameters_path=PATH_RESULTS, 
                                                     digits=5, max_refined_level=1000, 
                                                     output_deltastar=False, verbose=False, output_position=True, 
                                                     output_velocity=True, output_mass=True, output_time=True,
-                                                    output_metalicity=True, output_id=True, are_BH = not old_masclet)
+                                                    output_metalicity=True, output_id=True, are_BH = not OLD_MASCLET)
 
     st_x = masclet_st_data[0]
     st_y = masclet_st_data[1]
     st_z = masclet_st_data[2]
-    st_vx = masclet_st_data[3]*clight #in km/s
-    st_vy = masclet_st_data[4]*clight #in km/s
-    st_vz = masclet_st_data[5]*clight #in km/s
+    st_vx = masclet_st_data[3]*CLIGHT #in km/s
+    st_vy = masclet_st_data[4]*CLIGHT #in km/s
+    st_vz = masclet_st_data[5]*CLIGHT #in km/s
     st_mass = masclet_st_data[6]*units.mass_to_sun #in Msun
     st_age = masclet_st_data[7]*units.time_to_yr/1e9 #in Gyr
     st_met = masclet_st_data[8]
@@ -366,7 +366,7 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         print()
         print('----------> FoF begins <--------')
         print()
-        groups = pyfof.friends_of_friends(data = data, linking_length = ll)
+        groups = pyfof.friends_of_friends(data = data, linking_length = LL)
         groups = np.array(groups, dtype=object)
         #CLEAN THOSE HALOES with npart < minp
         groups = groups[good_groups(groups)]
@@ -374,24 +374,23 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         print()
         #CALCULATE CM, CM_vel AND phase-space cleaning
         print('---> Phase-space cleaning begins <---')
-        CX = []
-        CY = []
-        CZ = []
-        MM = []
-        RMAX = []
-        NPART = []
-        NCELL = []
+        center_x = []
+        center_y = []
+        center_z = []
+        masses = []
+        rmax = []
+        num_particles = []
+        num_cells = []
         new_groups = []
         which_cell_list_x = [] 
         which_cell_list_y = []
         which_cell_list_z = []
         for ihal in tqdm(range(len(groups))):
             part_list = np.array(groups[ihal])
-            cx, cy, cz, M = halo_properties.center_of_mass(part_list, st_x, st_y, st_z, st_mass)
-            M0 = M
+            cx, cy, cz, mass = halo_properties.center_of_mass(part_list, st_x, st_y, st_z, st_mass)
             #Create 3D grid with cellsize 2*LL for cleaning
-            RRHH = halo_properties.furthest_particle(cx, cy, cz, part_list, st_x, st_y, st_z)
-            grid = np.arange(-(RRHH+ll), RRHH+ll, 2*ll)
+            most_distant_r = halo_properties.furthest_particle(cx, cy, cz, part_list, st_x, st_y, st_z)
+            grid = np.arange(-(most_distant_r+LL), most_distant_r+LL, 2*LL)
             n_cell = len(grid)
             vcm_cell = np.zeros((n_cell, n_cell, n_cell, 3))
             mass_cell = np.zeros((n_cell, n_cell, n_cell))
@@ -405,128 +404,174 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
                                                                                                                                 sig3D_cell)
             
             #DO THE CLEANING: Right CM, Mass and Furthest particle
-            cx, cy, cz, M, RRHH, control, which_cell_x, which_cell_y, which_cell_z = halo_properties.clean_cell(cx, cy, cz, M, RRHH, grid, part_list, st_x, st_y, 
+            cx, cy, cz, mass, most_distant_r, control, which_cell_x, which_cell_y, which_cell_z = halo_properties.clean_cell(cx, cy, cz, mass, most_distant_r, grid, part_list, st_x, st_y, 
                                                                                                                 st_z, st_vx, st_vy, st_vz, st_mass, vcm_cell,
-                                                                                                                mass_cell, quantas_cell, sig3D_cell, ll, q_fil, sig_fil,
+                                                                                                                mass_cell, quantas_cell, sig3D_cell, LL, Q_FIL, SIG_FIL,
                                                                                                                 which_cell_x, which_cell_y, which_cell_z)
-            #vx, vy, vz = CM_velocity(M, part_list[control.astype(bool)], st_vx, st_vy, st_vz, st_mass)
-            #FASTER CLEANING --> ESCAPE VELOCITY IN ITS POSITION, CONSIDERING MASS WITHOUT CLEANING M0 and SPHERICAL SIMMETRY
-            # factor_v = 4
-            # control = escape_velocity_cleaning(cx, cy, cz, vx, vy, vz, M0, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, control, factor_v)
+
             #CLEANING DONE
             control = control.astype(bool)
             npart = len(part_list[control])
-            cx, cy, cz, M = halo_properties.center_of_mass(part_list[control], st_x, st_y, st_z, st_mass)
-            RRHH = halo_properties.furthest_particle(cx, cy, cz, part_list[control], st_x, st_y, st_z)
-            if npart > minp:
-                CX.append(cx)
-                CY.append(cy)
-                CZ.append(cz)
-                MM.append(M)
-                RMAX.append(RRHH)
-                NPART.append(npart)
-                NCELL.append(n_cell)
+            cx, cy, cz, mass = halo_properties.center_of_mass(part_list[control], st_x, st_y, st_z, st_mass)
+            most_distant_r = halo_properties.furthest_particle(cx, cy, cz, part_list[control], st_x, st_y, st_z)
+            if npart > MINP:
+                center_x.append(cx)
+                center_y.append(cy)
+                center_z.append(cz)
+                masses.append(mass)
+                rmax.append(most_distant_r)
+                num_particles.append(npart)
+                num_cells.append(n_cell)
                 new_groups.append(part_list[control])
                 which_cell_list_x.append(which_cell_x)
                 which_cell_list_y.append(which_cell_y)
                 which_cell_list_z.append(which_cell_z)
 
-        CX = np.array(CX)
-        CY = np.array(CY)
-        CZ = np.array(CZ)
-        MM = np.array(MM)
-        RMAX = np.array(RMAX)
-        NPART = np.array(NPART).astype(np.int32)
-        NHAL = len(new_groups)
-        NPARTHAL = np.sum(NPART)
-        NCELL = np.array(NCELL).astype(np.int32)
+        center_x = np.array(center_x)
+        center_y = np.array(center_y)
+        center_z = np.array(center_z)
+        masses = np.array(masses)
+        rmax = np.array(rmax)
+        num_particles = np.array(num_particles).astype(np.int32)
+        num_halos = len(new_groups)
+        n_part_in_halos = np.sum(num_particles)
+        num_cells = np.array(num_cells).astype(np.int32)
         which_cell_list_x = np.array(which_cell_list_x, dtype=object)
         which_cell_list_y = np.array(which_cell_list_y, dtype=object)
         which_cell_list_z = np.array(which_cell_list_z, dtype=object)
 
-        print('Number of haloes after phase-space cleaning:', NHAL)
-        print('Number of particles in haloes after cleaning:', NPARTHAL)
+        print('Number of haloes after phase-space cleaning:', num_halos)
+        print('Number of particles in haloes after cleaning:', n_part_in_halos)
+
         print()
         print('Calculating properties')
         #CALCULATE HALO PROPERTIES
-        RAD05 = np.zeros(NHAL)
-        RAD05_x = np.zeros(NHAL)
-        RAD05_y = np.zeros(NHAL)
-        RAD05_z = np.zeros(NHAL)
-        VX = np.zeros(NHAL)
-        VY = np.zeros(NHAL)
-        VZ = np.zeros(NHAL)
-        JX = np.zeros(NHAL)
-        JY = np.zeros(NHAL)
-        JZ = np.zeros(NHAL)
-        J = np.zeros(NHAL)
-        PEAKX = np.zeros(NHAL)
-        PEAKY = np.zeros(NHAL)
-        PEAKZ = np.zeros(NHAL)
-        MSFR = np.zeros(NHAL)
-        SIG_3D = np.zeros(NHAL)
-        SIG_1D_x = np.zeros(NHAL)
-        SIG_1D_y = np.zeros(NHAL)
-        SIG_1D_z = np.zeros(NHAL)
-        EDAD = np.zeros(NHAL)
-        EDAD_MASS = np.zeros(NHAL)
-        MET = np.zeros(NHAL)
-        MET_MASS = np.zeros(NHAL)
-        VSIGMA = np.zeros(NHAL)
-        LAMBDA = np.zeros(NHAL)
-        V_TF = np.zeros(NHAL)
-        SAXISMAJOR = np.zeros(NHAL)
-        SAXISINTERMEDIATE = np.zeros(NHAL)
-        SAXISMINOR = np.zeros(NHAL)
-        SERSIC = np.zeros(NHAL)
-        MGAS = np.zeros(NHAL)
-        FRACCOLD = np.zeros(NHAL)
-        MRPS_COLD = np.zeros(NHAL)
-        MRPS_HOT = np.zeros(NHAL)
-        for ihal in tqdm(range(NHAL)):
+        rad05 = np.zeros(num_halos)
+        rad05_x = np.zeros(num_halos)
+        rad05_y = np.zeros(num_halos)
+        rad05_z = np.zeros(num_halos)
+        velocities_x = np.zeros(num_halos)
+        velocities_y = np.zeros(num_halos)
+        velocities_z = np.zeros(num_halos)
+        specific_angular_momentum_x = np.zeros(num_halos)
+        specific_angular_momentum_y = np.zeros(num_halos)
+        specific_angular_momentum_z = np.zeros(num_halos)
+        specific_angular_momentum = np.zeros(num_halos)
+        density_peak_x = np.zeros(num_halos)
+        density_peak_y = np.zeros(num_halos)
+        density_peak_z = np.zeros(num_halos)
+        star_formation_masses = np.zeros(num_halos)
+        sig_3D = np.zeros(num_halos)
+        sig_1D_x = np.zeros(num_halos)
+        sig_1D_y = np.zeros(num_halos)
+        sig_1D_z = np.zeros(num_halos)
+        stellar_ages = np.zeros(num_halos)
+        stellar_age_mass = np.zeros(num_halos)
+        metallicities = np.zeros(num_halos)
+        metallicities_mass = np.zeros(num_halos)
+        vsigma = np.zeros(num_halos)
+        lambda_ensellem = np.zeros(num_halos)
+        tully_fisher_velocities = np.zeros(num_halos)
+        s_axis_major = np.zeros(num_halos)
+        s_axis_intermediate = np.zeros(num_halos)
+        s_axis_minor = np.zeros(num_halos)
+        sersic_indices = np.zeros(num_halos)
+        gas_masses = np.zeros(num_halos)
+        cold_bound_gas_fractions = np.zeros(num_halos)
+        cold_unbound_gas_masses = np.zeros(num_halos)
+        hot_unbound_gas_masses = np.zeros(num_halos)
+        for ihal in tqdm(range(num_halos)):
+            #HALO PARTICLE INDICES
             part_list = new_groups[ihal]
-            PEAKX[ihal], PEAKY[ihal], PEAKZ[ihal] = halo_properties.density_peak(part_list, st_x, st_y, st_z, st_mass, ll)
-            cx = CX[ihal]
-            cy = CY[ihal]
-            cz = CZ[ihal]
-            M = MM[ihal]
-            RAD05[ihal] = halo_properties.half_mass_radius(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass)
-            RAD05_x[ihal], RAD05_y[ihal], RAD05_z[ihal] = halo_properties.half_mass_radius_proj(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass)
-            VX[ihal], VY[ihal], VZ[ihal] = halo_properties.CM_velocity(M, part_list, st_vx, st_vy, st_vz, st_mass)
-            V_TF[ihal] = halo_properties.tully_fisher_velocity(part_list, cx, cy, cz, st_x, st_y, st_z, VX[ihal], VY[ihal], VZ[ihal], st_vx, st_vy, st_vz, st_mass, RAD05[ihal])
-            JX[ihal], JY[ihal], JZ[ihal] = halo_properties.angular_momentum(M, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, cx, cy, cz, VX[ihal], VY[ihal], VZ[ihal])
-            J[ihal] = (JX[ihal]**2 + JY[ihal]**2 + JZ[ihal]**2)**0.5
-            SAXISMAJOR[ihal], SAXISINTERMEDIATE[ihal], SAXISMINOR[ihal] = halo_properties.halo_shape(part_list, st_x, st_y, st_z, st_mass, cx, cy, cz, RAD05[ihal])
-            #CARE HERE, RMAX IS CALCULATED WITH RESPECT TO THE CENTER OF MASS, NOT THE DENSITY PEAK
-            # and RAD05 is calculated with respect to the density peak
-            SERSIC[ihal] = halo_properties.simple_sersic_index(part_list, st_x, st_y, st_z, CX[ihal], CY[ihal], CZ[ihal], RAD05[ihal])
-            if it_count > 0:
-                MSFR[ihal] = halo_properties.star_formation(part_list, st_mass, st_age, cosmo_time*units.time_to_yr/1e9, dt)
 
-            SIG_3D[ihal] = halo_properties.sigma_effective(part_list, RAD05[ihal], st_x, st_y, st_z, st_vx, st_vy, st_vz, cx, cy, cz, VX[ihal], VY[ihal], VZ[ihal])
-            grid = np.arange(-(RMAX[ihal]+ll), RMAX[ihal]+ll, 2*ll) #centers of the cells
+            #DENSITY PEAK
+            density_peak_x[ihal], density_peak_y[ihal], density_peak_z[ihal] = halo_properties.density_peak(part_list, st_x, st_y, st_z, st_mass, LL)
+
+            #ASSUME SOME CENTERING, CENTER OF MASS OR DENSITY PEAK
+            #CARE HERE, RMAX IS CALCULATED WITH RESPECT TO THE CENTER OF MASS, NOT THE DENSITY PEAK
+
+            cx = center_x[ihal]
+            cy = center_y[ihal]
+            cz = center_z[ihal]
+            mass = masses[ihal]
+
+            #EFFECTIVE RADIUS
+            rad05[ihal] = halo_properties.half_mass_radius(cx, cy, cz, mass, part_list, st_x, st_y, st_z, st_mass)
+
+            (rad05_x[ihal], 
+             rad05_y[ihal], 
+             rad05_z[ihal]) = halo_properties.half_mass_radius_proj(cx, cy, cz, mass, part_list, st_x, st_y, st_z, st_mass)
+            
+            #BULK VELOCITY
+            (velocities_x[ihal], 
+             velocities_y[ihal], 
+             velocities_z[ihal]) = halo_properties.CM_velocity(mass, part_list, st_vx, st_vy, st_vz, st_mass)
+            
+            #TULLY-FISHER
+            tully_fisher_velocities[ihal] = halo_properties.tully_fisher_velocity(part_list, cx, cy, cz, st_x, st_y, st_z, 
+                                                                                  velocities_x[ihal], velocities_y[ihal], velocities_z[ihal], 
+                                                                                  st_vx, st_vy, st_vz, st_mass, rad05[ihal])
+            #ANGULAR MOMENTUM
+            (specific_angular_momentum_x[ihal], 
+             specific_angular_momentum_y[ihal],
+             specific_angular_momentum_z[ihal]) = halo_properties.angular_momentum(mass, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, 
+                                                                                   cx, cy, cz, velocities_x[ihal], velocities_y[ihal], velocities_z[ihal])
+            
+            specific_angular_momentum[ihal] = (specific_angular_momentum_x[ihal]**2 + 
+                                               specific_angular_momentum_y[ihal]**2 + 
+                                               specific_angular_momentum_z[ihal]**2)**0.5
+            
+            #SHAPE
+            (s_axis_major[ihal], 
+             s_axis_intermediate[ihal], 
+             s_axis_minor[ihal]) = halo_properties.halo_shape(part_list, st_x, st_y, st_z, st_mass, cx, cy, cz, rad05[ihal])
+            
+            #SÉRSIC INDEX
+            sersic_indices[ihal] = halo_properties.simple_sersic_index(part_list, st_x, st_y, st_z, center_x[ihal], center_y[ihal], center_z[ihal], rad05[ihal])
+            if it_count > 0:
+                star_formation_masses[ihal] = halo_properties.star_formation(part_list, st_mass, st_age, cosmo_time*units.time_to_yr/1e9, dt)
+
+            #SIGMA
+            sig_3D[ihal] = halo_properties.sigma_effective(part_list, rad05[ihal], st_x, st_y, st_z, st_vx, st_vy, st_vz, cx, cy, cz, 
+                                                           velocities_x[ihal], velocities_y[ihal], velocities_z[ihal])
+
+            # FAST / SLOW ROTATOR 
+            grid = np.arange(-(rmax[ihal]+LL), rmax[ihal]+LL, 2*LL) #centers of the cells
             n_cell = len(grid)
-            SIG_1D_x[ihal], SIG_1D_y[ihal], SIG_1D_z[ihal], VSIGMA[ihal], LAMBDA[ihal] = halo_properties.sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, 
-                                                                                                                           st_vx, st_vy, st_vz, st_mass, cx, cy, cz, 
-                                                                                                                           RAD05_x[ihal], RAD05_y[ihal], RAD05_z[ihal], ll)
-            EDAD[ihal], EDAD_MASS[ihal], MET[ihal], MET_MASS[ihal] = halo_properties.avg_age_metallicity(part_list, st_age, st_met, st_mass, cosmo_time*units.time_to_yr/1e9)
+
+            (sig_1D_x[ihal], 
+             sig_1D_y[ihal], 
+             sig_1D_z[ihal], 
+             vsigma[ihal], 
+             lambda_ensellem[ihal]) = halo_properties.sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, 
+                                                                        st_vx, st_vy, st_vz, st_mass, cx, cy, cz, 
+                                                                        rad05_x[ihal], rad05_y[ihal], rad05_z[ihal], LL)
+            
+            # METALLICITY AND AGE
+            (stellar_ages[ihal], 
+             stellar_age_mass[ihal], 
+             metallicities[ihal], 
+             metallicities_mass[ihal]) = halo_properties.avg_age_metallicity(part_list, st_age, st_met, st_mass, cosmo_time*units.time_to_yr/1e9)
 
             # RPS EFFECTS
-            if rps_flag:
-                Rrps = 2*RAD05[ihal]
-                MGAS[ihal], FRACCOLD[ihal], MRPS_COLD[ihal], MRPS_HOT[ihal] = halo_gas.RPS(rete, L, nx, grid_data, gas_data, 
-                                                                                     masclet_dm_data, masclet_st_data, cx, cy, cz, 
-                                                                                     VX[ihal], VY[ihal], VZ[ihal], Rrps)
+            if RPS_FLAG:
+                rps_radius = 2*rad05[ihal] #RADIUS TO CALCULATE COLD/HOT BOUND/UNBOUND GAS
+                (gas_masses[ihal], 
+                 cold_bound_gas_fractions[ihal], 
+                 cold_unbound_gas_masses[ihal], 
+                 hot_unbound_gas_masses[ihal]) = halo_gas.RPS(rete, L, NX, grid_data, gas_data, 
+                                                                masclet_dm_data, masclet_st_data, cx, cy, cz, 
+                                                                    velocities_x[ihal], velocities_y[ihal], velocities_z[ihal], rps_radius)
                 
         ############################################################################################################
 
         if len(new_groups)>0:
             print()
-            print(f'CHECK min, max in R_05 {np.min(RAD05)*rete*1e3:.2f} {np.max(RAD05)*rete*1e3:.2f}')
-            print(f'CHECK min, max in RMAX {np.min(RMAX)*rete*1e3:.2f} {np.max(RMAX)*rete*1e3:.2f}')
-            print(f'CHECK min, max in stellar mass {np.min(MM):.2e} {np.max(MM):.2e}')
-            print(f'CHECK min, max in gas mass {np.min(MGAS):.2e} {np.max(MGAS):.2e}')
-            print(f'CHECK min, max in J {np.min(J)*rete*1e3:.2f} {np.max(J)*rete*1e3:.2f}')
+            print(f'CHECK min, max in R_05 {np.min(rad05)*rete*1e3:.2f} {np.max(rad05)*rete*1e3:.2f}')
+            print(f'CHECK min, max in RMAX {np.min(rmax)*rete*1e3:.2f} {np.max(rmax)*rete*1e3:.2f}')
+            print(f'CHECK min, max in stellar mass {np.min(masses):.2e} {np.max(masses):.2e}')
+            print(f'CHECK min, max in gas mass {np.min(gas_masses):.2e} {np.max(gas_masses):.2e}')
+            print(f'CHECK min, max in J {np.min(specific_angular_momentum)*rete*1e3:.2f} {np.max(specific_angular_momentum)*rete*1e3:.2f}')
             print()
 
         ##########################################
@@ -535,44 +580,44 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
 
         print('-------> MERGERS/PROGENITORS <-------')
 
-        PRO1 = np.zeros((NHAL), dtype=np.int32)
-        PRO2 = np.zeros((NHAL), dtype=np.int32)
-        NMERG = np.zeros((NHAL), dtype=np.int32)
-        MER_TYPE = np.zeros((NHAL), dtype=np.int32)
+        pro1 = np.zeros(num_halos, dtype=np.int32)
+        pro2 = np.zeros(num_halos, dtype=np.int32)
+        n_mergers = np.zeros(num_halos, dtype=np.int32)
+        merger_type = np.zeros(num_halos, dtype=np.int32)
         for ih, halo in enumerate(new_groups): 
             oripas = st_oripa[halo]
             masses = st_mass[halo]
-            mass_intersections = np.zeros(len(OMM)) # mass coming from haloes in the iteration before
+            mass_intersections = np.zeros(len(omm)) # mass coming from haloes in the iteration before
             nmergs = 0
             for oih, ooripas in enumerate(oripas_before):
                 intersection = np.in1d(oripas, ooripas, assume_unique = True)
                 if np.count_nonzero(intersection) > 0:
-                    mass_intersections[oih] = OMM[oih]
+                    mass_intersections[oih] = omm[oih]
                     nmergs += 1
 
-            NMERG[ih] = nmergs
+            n_mergers[ih] = nmergs
             argsort_intersections = np.flip(np.argsort(mass_intersections)) #sort by mass (INDICES)
             sort_intersections = np.flip(np.sort(mass_intersections)) #sort by mass (MASSES)
-            if NMERG[ih] > 0:
-                PRO1[ih] = argsort_intersections[0] + 1 #ID in previous iteration of main progenitor
+            if n_mergers[ih] > 0:
+                pro1[ih] = argsort_intersections[0] + 1 #ID in previous iteration of main progenitor
             
                 #FIRST LOOK IF THIS HALO IS THE RESULT OF THE MAIN PROGENITOR BREAKING APPART
-                if 1.2*MM[ih] < OMM[PRO1[ih]-1]:
-                    MER_TYPE[ih] = -1 #Old HALO (OHALO) BREAKING APPART
+                if 1.2*masses[ih] < omm[pro1[ih]-1]:
+                    merger_type[ih] = -1 #Old HALO (OHALO) BREAKING APPART
             
                 else:
-                    if NMERG[ih] > 1:
-                        PRO2[ih] = argsort_intersections[1] + 1 #ID in previous iteration of second progenitor
+                    if n_mergers[ih] > 1:
+                        pro2[ih] = argsort_intersections[1] + 1 #ID in previous iteration of second progenitor
 
                         mer_frac = sort_intersections[1]/sort_intersections[0] #MERGER MASS FRACTION
                         if mer_frac > 1/3:
-                            MER_TYPE[ih] = 1 #MAJOR MERGER
+                            merger_type[ih] = 1 #MAJOR MERGER
 
                         if 1/20 < mer_frac < 1/3:
-                            MER_TYPE[ih] = 2 #MINOR MERGER
+                            merger_type[ih] = 2 #MINOR MERGER
 
                         else:                #ACCRETION
-                            MER_TYPE[ih] = 3 
+                            merger_type[ih] = 3 
 
         print('-------> DONE <-------')
 
@@ -580,53 +625,53 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         ####### SORTING BY NUMBER OF PARTICLES ##################
         ###########################################################
 
-        argsort_part = np.flip(np.argsort(NPART)) #sorted descending
+        argsort_part = np.flip(np.argsort(num_particles)) #sorted descending
 
-        NPART = NPART[argsort_part]
-        NCELL = NCELL[argsort_part]
+        num_particles = num_particles[argsort_part]
+        num_cells = num_cells[argsort_part]
         which_cell_list_x = which_cell_list_x[argsort_part]
         which_cell_list_y = which_cell_list_y[argsort_part]
         which_cell_list_z = which_cell_list_z[argsort_part]
-        MM = MM[argsort_part]
-        MSFR = MSFR[argsort_part]
-        RMAX = RMAX[argsort_part]
-        RAD05 = RAD05[argsort_part]
-        RAD05_x = RAD05_x[argsort_part]
-        RAD05_y = RAD05_y[argsort_part]
-        RAD05_z = RAD05_z[argsort_part]
-        SIG_3D = SIG_3D[argsort_part]
-        SIG_1D_x = SIG_1D_x[argsort_part]
-        SIG_1D_y = SIG_1D_y[argsort_part]
-        SIG_1D_z = SIG_1D_z[argsort_part]
-        J = J[argsort_part]
-        CX = CX[argsort_part]
-        CY = CY[argsort_part]
-        CZ = CZ[argsort_part]
-        PEAKX = PEAKX[argsort_part]
-        PEAKY = PEAKY[argsort_part]
-        PEAKZ = PEAKZ[argsort_part]
-        VX = VX[argsort_part]
-        VY = VY[argsort_part]
-        VZ = VZ[argsort_part]
-        PRO1 = PRO1[argsort_part]
-        PRO2 = PRO2[argsort_part]
-        NMERG = NMERG[argsort_part]
-        MER_TYPE = MER_TYPE[argsort_part]
-        EDAD = EDAD[argsort_part]
-        EDAD_MASS = EDAD_MASS[argsort_part]
-        MET = MET[argsort_part]
-        MET_MASS = MET_MASS[argsort_part]
-        VSIGMA = VSIGMA[argsort_part]
-        LAMBDA = LAMBDA[argsort_part]
-        V_TF = V_TF[argsort_part]
-        SAXISMAJOR = SAXISMAJOR[argsort_part]
-        SAXISINTERMEDIATE = SAXISINTERMEDIATE[argsort_part]
-        SAXISMINOR = SAXISMINOR[argsort_part]
-        SERSIC = SERSIC[argsort_part]
-        MGAS = MGAS[argsort_part]
-        FRACCOLD = FRACCOLD[argsort_part]
-        MRPS_COLD = MRPS_COLD[argsort_part]
-        MRPS_HOT = MRPS_HOT[argsort_part]
+        masses = masses[argsort_part]
+        star_formation_masses = star_formation_masses[argsort_part]
+        rmax = rmax[argsort_part]
+        rad05 = rad05[argsort_part]
+        rad05_x = rad05_x[argsort_part]
+        rad05_y = rad05_y[argsort_part]
+        rad05_z = rad05_z[argsort_part]
+        sig_3D = sig_3D[argsort_part]
+        sig_1D_x = sig_1D_x[argsort_part]
+        sig_1D_y = sig_1D_y[argsort_part]
+        sig_1D_z = sig_1D_z[argsort_part]
+        specific_angular_momentum = specific_angular_momentum[argsort_part]
+        center_x = center_x[argsort_part]
+        center_y = center_y[argsort_part]
+        center_z = center_z[argsort_part]
+        density_peak_x = density_peak_x[argsort_part]
+        density_peak_y = density_peak_y[argsort_part]
+        density_peak_z = density_peak_z[argsort_part]
+        velocities_x = velocities_x[argsort_part]
+        velocities_y = velocities_y[argsort_part]
+        velocities_z = velocities_z[argsort_part]
+        pro1 = pro1[argsort_part]
+        pro2 = pro2[argsort_part]
+        n_mergers = n_mergers[argsort_part]
+        merger_type = merger_type[argsort_part]
+        stellar_ages = stellar_ages[argsort_part]
+        stellar_age_mass = stellar_age_mass[argsort_part]
+        metallicities = metallicities[argsort_part]
+        metallicities_mass = metallicities_mass[argsort_part]
+        vsigma = vsigma[argsort_part]
+        lambda_ensellem = lambda_ensellem[argsort_part]
+        tully_fisher_velocities = tully_fisher_velocities[argsort_part]
+        s_axis_major = s_axis_major[argsort_part]
+        s_axis_intermediate = s_axis_intermediate[argsort_part]
+        s_axis_minor = s_axis_minor[argsort_part]
+        sersic_indices = sersic_indices[argsort_part]
+        gas_masses = gas_masses[argsort_part]
+        cold_bound_gas_fractions = cold_bound_gas_fractions[argsort_part]
+        cold_unbound_gas_masses = cold_unbound_gas_masses[argsort_part]
+        hot_unbound_gas_masses = hot_unbound_gas_masses[argsort_part]
 
         ##########################################
         ##########################################
@@ -636,7 +681,7 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         #oripas of particle in halos of iteration before
         # and masses before
         oripas_before = []
-        OMM = np.copy(MM)
+        omm = np.copy(masses)
         for isort_part in range(len(argsort_part)): 
             halo = new_groups[argsort_part[isort_part]]
             oripas = st_oripa[halo]
@@ -652,20 +697,21 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
         # - The luminosity weights are in g-band (see pycalipso.make_light)
         # - Care should be taken in the spectral range in which calculations are done. The filter ranges must be inside.
 
-        LUMU = np.zeros(NHAL)
-        LUMG = np.zeros(NHAL)
-        LUMR = np.zeros(NHAL)
-        LUMI = np.zeros(NHAL)
-        SBU = np.zeros(NHAL)
-        SBG = np.zeros(NHAL)
-        SBR = np.zeros(NHAL)
-        SBI = np.zeros(NHAL)
-        UR_COLOR = np.zeros(NHAL)
-        GR_COLOR = np.zeros(NHAL)
-        SERSIC_LUM = np.zeros(NHAL)
-        sersic_counter = np.zeros(NHAL)
+        # See that this arrays are already sorted by number of particles
+        lum_u = np.zeros(num_halos)
+        lum_g = np.zeros(num_halos)
+        lum_r = np.zeros(num_halos)
+        lum_i = np.zeros(num_halos)
+        sb_u = np.zeros(num_halos)
+        sb_g = np.zeros(num_halos)
+        sb_r = np.zeros(num_halos)
+        sb_i = np.zeros(num_halos)
+        ur_color = np.zeros(num_halos)
+        gr_color = np.zeros(num_halos)
+        sersic_index_lum = np.zeros(num_halos)
+        sersic_counter = np.zeros(num_halos)
 
-        if calipso_flag:
+        if CALIPSO_FLAG:
             
             print()
             print()
@@ -690,30 +736,30 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
             string_it = f'{iteration:05d}'
             #Establishing FLAT LCDM cosmology 
             # NOTICE HERE DLUM IS NOT 1 PC, AND HENCE MAGNITUDES HERE ARE NOT ABSOLUTE
-            cosmo = cosmology.FlatLambdaCDM(H0=ache*100, Om0=omega0)
+            cosmo = cosmology.FlatLambdaCDM(H0=ACHE*100, Om0=OMEGA0)
             dlum = abs(cosmo.luminosity_distance(zeta).value)
             daa = abs(cosmo.angular_diameter_distance(zeta).value) # if zeta < 0, not defined
             arcsec2kpc=daa*1.e3*(acos(-1)/180.)/3600.
             # Area of pixel in arcsec^2
-            area_com=(ll*ll)
+            area_com=(LL*LL)
             area_pys=area_com/((1.+zeta)*(1.+zeta))
             area_arc=area_pys/(arcsec2kpc*arcsec2kpc)
             print('zeta, dist_lum, arcsec2kpc:', zeta, dlum, arcsec2kpc)
             print()
             print('Calculating SEDs of the galaxies')
-            for ihal in tqdm(range(NHAL)):
-                npart = NPART[ihal] # number of particles in the halo
+            for ihal in tqdm(range(num_halos)):
+                npart = num_particles[ihal] # number of particles in the halo
                 halo = new_groups_calipso[ihal] # halo particle indices for array slicing
 
                 mass = st_mass[halo] #mass of halo particles
                 met = st_met[halo] #metallicity of halo particles
                 age = st_age[halo] #age of halo particles
-                x = (st_x[halo] - CX[ihal])*1e3 #relative position of halo particles
-                y = (st_y[halo] - CY[ihal])*1e3 # in kpc
-                z = (st_z[halo] - CZ[ihal])*1e3
-                velx = st_vx[halo] - VX[ihal] 
-                vely = st_vy[halo] - VY[ihal] #LOS velocity of halo particles
-                velz = st_vz[halo] - VZ[ihal]
+                x = (st_x[halo] - center_x[ihal])*1e3 #relative position of halo particles
+                y = (st_y[halo] - center_y[ihal])*1e3 # in kpc
+                z = (st_z[halo] - center_z[ihal])*1e3
+                velx = st_vx[halo] - velocities_x[ihal] 
+                vely = st_vy[halo] - velocities_y[ihal] #LOS velocity of halo particles
+                velz = st_vz[halo] - velocities_z[ihal]
 
                 # # CREATE THE GRID with maximum resolution applied to the halo in the simulation
                 # box = [CX[ihal] - RMAX[ihal], CX[ihal] + RMAX[ihal], CY[ihal] - RMAX[ihal], 
@@ -724,14 +770,14 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
                 # max_level = np.max(patch_level[which_patches])
                 # res_minimum_cell = L / nx / 2**max_level * 1e3 # maximum resolution of the simulation in kpc
 
-                res = ll*1e3 #2*res_minimum_cell # resolution of the grid in kpc
-                grid_edges = np.arange(-RMAX[ihal]*1e3 - res, RMAX[ihal]*1e3 + res, res)
+                res = LL*1e3 #2*res_minimum_cell # resolution of the grid in kpc
+                grid_edges = np.arange(-rmax[ihal]*1e3 - res, rmax[ihal]*1e3 + res, res)
                 grid_centers = (grid_edges[1:] + grid_edges[:-1]) / 2
                 ncell = len(grid_centers)  # number of cells in each direction
                 which_cell_x, which_cell_y, which_cell_z = pycalipso.put_particles_in_grid(grid_centers, x, y, z)
 
                 # finner grid to interpolate
-                res_interp =  L / nx / 2**9 * 1e3
+                res_interp =  L / NX / 2**9 * 1e3
                 grid_interp_edges = np.arange(grid_centers[0], grid_centers[-1], res_interp)
                 grid_interp = (grid_interp_edges[1:] + grid_interp_edges[:-1]) / 2
                 X_grid_interp, Y_grid_interp = np.meshgrid(grid_interp, grid_interp)
@@ -757,25 +803,25 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
                 # Finding fluxes in each cell and luminosity weighted quantities
                 (flux_cell, flux_cell_sig, fluxtot, vell_malla, 
                 sigl_malla, lum_malla, twl, Zwl, vell2_malla) = pycalipso.make_light(npart, mass, age, 
-                                                                                    met, wavelenghts, 
-                                                                                    SSP, age_span, Z_span,
-                                                                                    nw, istart, iend, disp, 
+                                                                                    met, WAVELENGHTS, 
+                                                                                    SSP, AGE_SPAN, Z_SPAN,
+                                                                                    N_W, I_START, I_END, DISP, 
                                                                                     lumg, tam_i, tam_j, 
                                                                                     vel_LOS, ncell, ncell, 
-                                                                                    mass_cell, clight)
+                                                                                    mass_cell, CLIGHT)
                 
                 # Magnitudes and fluxes through filters in each cell. Images.
                 # First: total quantities
-                fmag_tot = np.zeros(nf)
-                flux_tot = np.zeros(nf)
-                pycalipso.mag_v1_0(wavelenghts, fluxtot, nw, fmag_tot, flux_tot, nf, nlf, wf, rf, wv, fv, nv, dlum) 
+                fmag_tot = np.zeros(N_F)
+                flux_tot = np.zeros(N_F)
+                pycalipso.mag_v1_0(WAVELENGHTS, fluxtot, N_W, fmag_tot, flux_tot, N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, wv, fv, nv, dlum) 
                 
                 lumtotu = flux_tot[0]
                 lumtotg = flux_tot[1]
                 lumtotr = flux_tot[2]
                 lumtoti = flux_tot[3]
 
-                area_halo_com = np.pi*RAD05[ihal]**2 # comoving area of the halo in kpc^2
+                area_halo_com = np.pi*rad05[ihal]**2 # comoving area of the halo in kpc^2
                 area_halo_pys = area_halo_com/((1.+zeta)*(1.+zeta)) # physical area of the halo in kpc^2
                 area_halo_arc = area_halo_pys/(arcsec2kpc*arcsec2kpc) # physical area of the halo in arcsec^2
 
@@ -788,7 +834,7 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
                 ur = fmag_tot[0]-fmag_tot[2] # color u-r
 
                 #Second: same quantities but for each cell and "visibility"
-                SBf, magf, fluxf = pycalipso.magANDfluxes(wavelenghts, nw, nf, nlf, wf, rf, wv, fv, nv,
+                SBf, magf, fluxf = pycalipso.magANDfluxes(WAVELENGHTS, N_W, N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, wv, fv, nv,
                                                            dlum, ncell, ncell, flux_cell, area_arc)
                 SBf[fluxf==0.] = np.nan 
                 magf[fluxf==0.] = np.nan
@@ -806,22 +852,22 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
                 flux_interpolated = flux_interp((X_grid_interp, Y_grid_interp))
 
                 # COMPARE INTERPOLATED FLUX WITH THE ORIGINAL ONE
-                n, eps = galaxy_image_fit.photutils_fit(RAD05[ihal]*1e3, 0., 2*RAD05[ihal]*1e3, res_interp, flux_2D = flux_interpolated)
+                n, eps = galaxy_image_fit.photutils_fit(rad05[ihal]*1e3, 0., 2*rad05[ihal]*1e3, res_interp, flux_2D = flux_interpolated)
 
                 # SAVE DATA
                 # FIRST, THE CATALOGUE
-                LUMU[ihal] += lumtotu
-                LUMG[ihal] += lumtotg
-                LUMR[ihal] += lumtotr
-                LUMI[ihal] += lumtoti
-                SBU[ihal] += SBu_tot
-                SBG[ihal] += SBg_tot
-                SBR[ihal] += SBr_tot
-                SBI[ihal] += SBi_tot
-                UR_COLOR[ihal] += ur
-                GR_COLOR[ihal] += gr
+                lum_u[ihal] += lumtotu
+                lum_g[ihal] += lumtotg
+                lum_r[ihal] += lumtotr
+                lum_i[ihal] += lumtoti
+                sb_u[ihal] += SBu_tot
+                sb_g[ihal] += SBg_tot
+                sb_r[ihal] += SBr_tot
+                sb_i[ihal] += SBi_tot
+                ur_color[ihal] += ur
+                gr_color[ihal] += gr
                 if n>0.:
-                    SERSIC_LUM[ihal] += n
+                    sersic_index_lum[ihal] += n
                     sersic_counter[ihal] += 1
                 
                 # SECOND IMAGES AND SPECTRA IN FILES
@@ -830,14 +876,14 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
                 np.save(file_fluxtot_x, fluxtot)
                 # Saving image (flux, mag and SB of each cell):
                 file_image_x = 'calipso_output/images_x/image'+string_it+'ih'+str(ihal+1)
-                file_image_array_x = np.zeros((ncell*ncell+1, nf*3))
+                file_image_array_x = np.zeros((ncell*ncell+1, N_F*3))
                 file_image_array_x[0, 0] = ncell #HEADER
                 file_image_array_x[0, 1] = ncell
-                file_image_array_x[0, 2] = ll
-                for i_f in range(nf):
+                file_image_array_x[0, 2] = LL
+                for i_f in range(N_F):
                     file_image_array_x[1:, i_f] = magf[:,:,i_f].reshape((ncell*ncell))
-                    file_image_array_x[1:, nf+i_f] = fluxf[:,:,i_f].reshape((ncell*ncell))
-                    file_image_array_x[1:, 2*nf+i_f] = SBf[:,:,i_f].reshape((ncell*ncell))
+                    file_image_array_x[1:, N_F+i_f] = fluxf[:,:,i_f].reshape((ncell*ncell))
+                    file_image_array_x[1:, 2*N_F+i_f] = SBf[:,:,i_f].reshape((ncell*ncell))
                 np.save(file_image_x, file_image_array_x)
 
                 #########################################################################################
@@ -856,24 +902,24 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
                 # Finding fluxes in each cell and luminosity weighted quantities
                 (flux_cell, flux_cell_sig, fluxtot, vell_malla, 
                 sigl_malla, lum_malla, twl, Zwl, vell2_malla) = pycalipso.make_light(npart, mass, age, 
-                                                                                    met, wavelenghts, 
-                                                                                    SSP, age_span, Z_span,
-                                                                                    nw, istart, iend, disp, 
+                                                                                    met, WAVELENGHTS, 
+                                                                                    SSP, AGE_SPAN, Z_SPAN,
+                                                                                    N_W, I_START, I_END, DISP, 
                                                                                     lumg, tam_i, tam_j, 
                                                                                     vel_LOS, ncell, ncell, 
-                                                                                    mass_cell, clight)                
+                                                                                    mass_cell, CLIGHT)                
                 # Magnitudes and fluxes through filters in each cell. Images.
                 # First: total quantities
-                fmag_tot = np.zeros(nf)
-                flux_tot = np.zeros(nf)
-                pycalipso.mag_v1_0(wavelenghts, fluxtot, nw, fmag_tot, flux_tot, nf, nlf, wf, rf, wv, fv, nv, dlum) 
+                fmag_tot = np.zeros(N_F)
+                flux_tot = np.zeros(N_F)
+                pycalipso.mag_v1_0(WAVELENGHTS, fluxtot, N_W, fmag_tot, flux_tot, N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, wv, fv, nv, dlum) 
                 
                 lumtotu = flux_tot[0]
                 lumtotg = flux_tot[1]
                 lumtotr = flux_tot[2]
                 lumtoti = flux_tot[3]
 
-                area_halo_com = np.pi*RAD05[ihal]**2 # comoving area of the halo in kpc^2
+                area_halo_com = np.pi*rad05[ihal]**2 # comoving area of the halo in kpc^2
                 area_halo_pys = area_halo_com/((1.+zeta)*(1.+zeta)) # physical area of the halo in kpc^2
                 area_halo_arc = area_halo_pys/(arcsec2kpc*arcsec2kpc) # physical area of the halo in arcsec^2
 
@@ -886,7 +932,7 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
                 ur = fmag_tot[0]-fmag_tot[2] # color u-r
 
                 #Second: same quantities but for each cell and "visibility"
-                SBf, magf, fluxf = pycalipso.magANDfluxes(wavelenghts, nw, nf, nlf, wf, rf, wv, fv, nv,
+                SBf, magf, fluxf = pycalipso.magANDfluxes(WAVELENGHTS, N_W, N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, wv, fv, nv,
                                                            dlum, ncell, ncell, flux_cell, area_arc)
                 SBf[fluxf==0.] = np.nan 
                 magf[fluxf==0.] = np.nan
@@ -904,22 +950,22 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
                 flux_interpolated = flux_interp((X_grid_interp, Y_grid_interp))
 
                 # COMPARE INTERPOLATED FLUX WITH THE ORIGINAL ONE
-                n, eps = galaxy_image_fit.photutils_fit(RAD05[ihal]*1e3, 0., 2*RAD05[ihal]*1e3, res_interp, flux_2D = flux_interpolated) 
+                n, eps = galaxy_image_fit.photutils_fit(rad05[ihal]*1e3, 0., 2*rad05[ihal]*1e3, res_interp, flux_2D = flux_interpolated) 
 
                 # SAVE DATA
                 # FIRST, THE CATALOGUE
-                LUMU[ihal] += lumtotu
-                LUMG[ihal] += lumtotg
-                LUMR[ihal] += lumtotr
-                LUMI[ihal] += lumtoti
-                SBU[ihal] += SBu_tot
-                SBG[ihal] += SBg_tot
-                SBR[ihal] += SBr_tot
-                SBI[ihal] += SBi_tot
-                UR_COLOR[ihal] += ur
-                GR_COLOR[ihal] += gr
+                lum_u[ihal] += lumtotu
+                lum_g[ihal] += lumtotg
+                lum_r[ihal] += lumtotr
+                lum_i[ihal] += lumtoti
+                sb_u[ihal] += SBu_tot
+                sb_g[ihal] += SBg_tot
+                sb_r[ihal] += SBr_tot
+                sb_i[ihal] += SBi_tot
+                ur_color[ihal] += ur
+                gr_color[ihal] += gr
                 if n>0.:
-                    SERSIC_LUM[ihal] += n
+                    sersic_index_lum[ihal] += n
                     sersic_counter[ihal] += 1
                 
                 # SECOND IMAGES AND SPECTRA IN FILES
@@ -928,14 +974,14 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
                 np.save(file_fluxtot_y, fluxtot)
                 # Saving image (flux, mag and SB of each cell):
                 file_image_y = 'calipso_output/images_y/image'+string_it+'ih'+str(ihal+1)
-                file_image_array_y = np.zeros((ncell*ncell+1, nf*3))
+                file_image_array_y = np.zeros((ncell*ncell+1, N_F*3))
                 file_image_array_y[0, 0] = ncell #HEADER
                 file_image_array_y[0, 1] = ncell
-                file_image_array_y[0, 2] = ll
-                for i_f in range(nf):
+                file_image_array_y[0, 2] = LL
+                for i_f in range(N_F):
                     file_image_array_y[1:, i_f] = magf[:,:,i_f].reshape((ncell*ncell))
-                    file_image_array_y[1:, nf+i_f] = fluxf[:,:,i_f].reshape((ncell*ncell))
-                    file_image_array_y[1:, 2*nf+i_f] = SBf[:,:,i_f].reshape((ncell*ncell))
+                    file_image_array_y[1:, N_F+i_f] = fluxf[:,:,i_f].reshape((ncell*ncell))
+                    file_image_array_y[1:, 2*N_F+i_f] = SBf[:,:,i_f].reshape((ncell*ncell))
                 np.save(file_image_y, file_image_array_y)
 
                 #########################################################################################
@@ -954,24 +1000,24 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
                 # Finding fluxes in each cell and luminosity weighted quantities
                 (flux_cell, flux_cell_sig, fluxtot, vell_malla, 
                 sigl_malla, lum_malla, twl, Zwl, vell2_malla) = pycalipso.make_light(npart, mass, age, 
-                                                                                    met, wavelenghts, 
-                                                                                    SSP, age_span, Z_span,
-                                                                                    nw, istart, iend, disp, 
+                                                                                    met, WAVELENGHTS, 
+                                                                                    SSP, AGE_SPAN, Z_SPAN,
+                                                                                    N_W, I_START, I_END, DISP, 
                                                                                     lumg, tam_i, tam_j, 
                                                                                     vel_LOS, ncell, ncell, 
-                                                                                    mass_cell, clight)                
+                                                                                    mass_cell, CLIGHT)                
                 # Magnitudes and fluxes through filters in each cell. Images.
                 # First: total quantities
-                fmag_tot = np.zeros(nf)
-                flux_tot = np.zeros(nf)
-                pycalipso.mag_v1_0(wavelenghts, fluxtot, nw, fmag_tot, flux_tot, nf, nlf, wf, rf, wv, fv, nv, dlum) 
+                fmag_tot = np.zeros(N_F)
+                flux_tot = np.zeros(N_F)
+                pycalipso.mag_v1_0(WAVELENGHTS, fluxtot, N_W, fmag_tot, flux_tot, N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, wv, fv, nv, dlum) 
                 
                 lumtotu = flux_tot[0]
                 lumtotg = flux_tot[1]
                 lumtotr = flux_tot[2]
                 lumtoti = flux_tot[3]
                 
-                area_halo_com = np.pi*RAD05[ihal]**2 # comoving area of the halo in kpc^2
+                area_halo_com = np.pi*rad05[ihal]**2 # comoving area of the halo in kpc^2
                 area_halo_pys = area_halo_com/((1.+zeta)*(1.+zeta)) # physical area of the halo in kpc^2
                 area_halo_arc = area_halo_pys/(arcsec2kpc*arcsec2kpc) # physical area of the halo in arcsec^2
 
@@ -984,7 +1030,7 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
                 ur = fmag_tot[0]-fmag_tot[2] # color u-r
 
                 #Second: same quantities but for each cell and "visibility"
-                SBf, magf, fluxf = pycalipso.magANDfluxes(wavelenghts, nw, nf, nlf, wf, rf, wv, fv, nv,
+                SBf, magf, fluxf = pycalipso.magANDfluxes(WAVELENGHTS, N_W, N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, wv, fv, nv,
                                                            dlum, ncell, ncell, flux_cell, area_arc)
                 SBf[fluxf==0.] = np.nan 
                 magf[fluxf==0.] = np.nan
@@ -1002,22 +1048,22 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
                 flux_interpolated = flux_interp((X_grid_interp, Y_grid_interp))
 
                 # COMPARE INTERPOLATED FLUX WITH THE ORIGINAL ONE
-                n, eps = galaxy_image_fit.photutils_fit(RAD05[ihal]*1e3, 0., 2*RAD05[ihal]*1e3, res_interp, flux_2D = flux_interpolated)
+                n, eps = galaxy_image_fit.photutils_fit(rad05[ihal]*1e3, 0., 2*rad05[ihal]*1e3, res_interp, flux_2D = flux_interpolated)
 
                 # SAVE DATA
                 # FIRST, THE CATALOGUE
-                LUMU[ihal] += lumtotu
-                LUMG[ihal] += lumtotg
-                LUMR[ihal] += lumtotr
-                LUMI[ihal] += lumtoti
-                SBU[ihal] += SBu_tot
-                SBG[ihal] += SBg_tot
-                SBR[ihal] += SBr_tot
-                SBI[ihal] += SBi_tot
-                UR_COLOR[ihal] += ur
-                GR_COLOR[ihal] += gr
+                lum_u[ihal] += lumtotu
+                lum_g[ihal] += lumtotg
+                lum_r[ihal] += lumtotr
+                lum_i[ihal] += lumtoti
+                sb_u[ihal] += SBu_tot
+                sb_g[ihal] += SBg_tot
+                sb_r[ihal] += SBr_tot
+                sb_i[ihal] += SBi_tot
+                ur_color[ihal] += ur
+                gr_color[ihal] += gr
                 if n>0.:
-                    SERSIC_LUM[ihal] += n
+                    sersic_index_lum[ihal] += n
                     sersic_counter[ihal] += 1
 
                 # SECOND IMAGES AND SPECTRA IN FILES
@@ -1026,14 +1072,14 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
                 np.save(file_fluxtot_z, fluxtot)
                 # Saving image (flux, mag and SB of each cell):
                 file_image_z = 'calipso_output/images_z/image'+string_it+'ih'+str(ihal+1)
-                file_image_array_z = np.zeros((ncell*ncell+1, nf*3))
+                file_image_array_z = np.zeros((ncell*ncell+1, N_F*3))
                 file_image_array_z[0, 0] = ncell #HEADER
                 file_image_array_z[0, 1] = ncell
-                file_image_array_z[0, 2] = ll
-                for i_f in range(nf):
+                file_image_array_z[0, 2] = LL
+                for i_f in range(N_F):
                     file_image_array_z[1:, i_f] = magf[:,:,i_f].reshape((ncell*ncell))
-                    file_image_array_z[1:, nf+i_f] = fluxf[:,:,i_f].reshape((ncell*ncell))
-                    file_image_array_z[1:, 2*nf+i_f] = SBf[:,:,i_f].reshape((ncell*ncell))
+                    file_image_array_z[1:, N_F+i_f] = fluxf[:,:,i_f].reshape((ncell*ncell))
+                    file_image_array_z[1:, 2*N_F+i_f] = SBf[:,:,i_f].reshape((ncell*ncell))
                 np.save(file_image_z, file_image_array_z)            
 
                 ############################################################################################################
@@ -1042,28 +1088,28 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
                 ############################################################################################################
 
                 # AVERAGE OVER THE 3 PROJECTIONS
-                LUMU[ihal] /= 3.
-                LUMG[ihal] /= 3.
-                LUMR[ihal] /= 3.
-                LUMI[ihal] /= 3.
-                SBU[ihal] /= 3.
-                SBG[ihal] /= 3.
-                SBR[ihal] /= 3.
-                SBI[ihal] /= 3.
-                UR_COLOR[ihal] /= 3.
-                GR_COLOR[ihal] /= 3.
+                lum_u[ihal] /= 3.
+                lum_g[ihal] /= 3.
+                lum_r[ihal] /= 3.
+                lum_i[ihal] /= 3.
+                sb_u[ihal] /= 3.
+                sb_g[ihal] /= 3.
+                sb_r[ihal] /= 3.
+                sb_i[ihal] /= 3.
+                ur_color[ihal] /= 3.
+                gr_color[ihal] /= 3.
                 if sersic_counter[ihal]>0:
-                    SERSIC_LUM[ihal] /= sersic_counter[ihal]
+                    sersic_index_lum[ihal] /= sersic_counter[ihal]
                 else:
-                    SERSIC_LUM[ihal] = np.nan
+                    sersic_index_lum[ihal] = np.nan
 
 
 
     else:
         print('No stars found!!')
         groups = []
-        NHAL = 0
-        NPARTHAL = 0
+        num_halos = 0
+        n_part_in_halos = 0
 
 
     ############################################################
@@ -1077,71 +1123,71 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
     print()
 
     iteration_data = {}
-    iteration_data['nhal'] = NHAL
-    iteration_data['nparhal'] = NPARTHAL
+    iteration_data['nhal'] = num_halos
+    iteration_data['nparhal'] = n_part_in_halos
     iteration_data['it_halma'] = it_count + 1
     iteration_data['it_masclet'] = iteration
     iteration_data['t'] = cosmo_time
     iteration_data['z'] = zeta
 
     haloes=[]
-    for ih in range(NHAL):
+    for ih in range(num_halos):
         halo = {}
         halo['id'] = ih+1
-        halo['partNum'] = NPART[ih]
-        halo['M'] = MM[ih]
+        halo['partNum'] = num_particles[ih]
+        halo['M'] = masses[ih]
         halo['Mv'] = 0.
-        halo['Mgas'] = MGAS[ih]
-        halo['fcold'] = FRACCOLD[ih]
-        halo['Mcoldgas'] = MRPS_COLD[ih]
-        halo['Mhotgas'] = MRPS_HOT[ih]
-        halo['Msfr'] = MSFR[ih]
-        halo['Rmax'] = RMAX[ih]*rete*1e3 #kpc
-        halo['R'] = RAD05[ih]*rete*1e3
-        halo['R_1d'] = (RAD05_x[ih] + RAD05_y[ih] + RAD05_z[ih])/3 * rete * 1e3
-        halo['R_1dx'] = RAD05_x[ih]*rete*1e3
-        halo['R_1dy'] = RAD05_y[ih]*rete*1e3
-        halo['R_1dz'] = RAD05_z[ih]*rete*1e3
-        halo['sigma_v'] = SIG_3D[ih]
-        halo['sigma_v_1d'] = (SIG_1D_x[ih] + SIG_1D_y[ih] + SIG_1D_z[ih])/3
-        halo['sigma_v_1dx'] = SIG_1D_x[ih]
-        halo['sigma_v_1dy'] = SIG_1D_y[ih]
-        halo['sigma_v_1dz'] = SIG_1D_z[ih]
-        halo['L'] = J[ih]*rete*1e3 # kpc km/s
-        halo['xcm'] = PEAKX[ih]*1e3 #kpc
-        halo['ycm'] = PEAKY[ih]*1e3
-        halo['zcm'] = PEAKZ[ih]*1e3
-        halo['vx'] = VX[ih]
-        halo['vy'] = VY[ih]
-        halo['vz'] = VZ[ih]
-        halo['father1'] = PRO1[ih]
-        halo['father2'] = PRO2[ih]
-        halo['nmerg'] = NMERG[ih]
-        halo['mergType'] = MER_TYPE[ih]
-        halo['age_m'] = EDAD_MASS[ih]
-        halo['age'] = EDAD[ih]
-        halo['Z_m'] = MET[ih]
-        halo['Z'] = MET_MASS[ih]
+        halo['Mgas'] = gas_masses[ih]
+        halo['fcold'] = cold_bound_gas_fractions[ih]
+        halo['Mcoldgas'] = cold_unbound_gas_masses[ih]
+        halo['Mhotgas'] = hot_unbound_gas_masses[ih]
+        halo['Msfr'] = star_formation_masses[ih]
+        halo['Rmax'] = rmax[ih]*rete*1e3 #kpc
+        halo['R'] = rad05[ih]*rete*1e3
+        halo['R_1d'] = (rad05_x[ih] + rad05_y[ih] + rad05_z[ih])/3 * rete * 1e3
+        halo['R_1dx'] = rad05_x[ih]*rete*1e3
+        halo['R_1dy'] = rad05_y[ih]*rete*1e3
+        halo['R_1dz'] = rad05_z[ih]*rete*1e3
+        halo['sigma_v'] = sig_3D[ih]
+        halo['sigma_v_1d'] = (sig_1D_x[ih] + sig_1D_y[ih] + sig_1D_z[ih])/3
+        halo['sigma_v_1dx'] = sig_1D_x[ih]
+        halo['sigma_v_1dy'] = sig_1D_y[ih]
+        halo['sigma_v_1dz'] = sig_1D_z[ih]
+        halo['L'] = specific_angular_momentum[ih]*rete*1e3 # kpc km/s
+        halo['xcm'] = density_peak_x[ih]*1e3 #kpc
+        halo['ycm'] = density_peak_y[ih]*1e3
+        halo['zcm'] = density_peak_z[ih]*1e3
+        halo['vx'] = velocities_x[ih]
+        halo['vy'] = velocities_y[ih]
+        halo['vz'] = velocities_z[ih]
+        halo['father1'] = pro1[ih]
+        halo['father2'] = pro2[ih]
+        halo['nmerg'] = n_mergers[ih]
+        halo['mergType'] = merger_type[ih]
+        halo['age_m'] = stellar_age_mass[ih]
+        halo['age'] = stellar_ages[ih]
+        halo['Z_m'] = metallicities[ih]
+        halo['Z'] = metallicities_mass[ih]
         #NEW ADDED
-        halo['Vsigma'] = VSIGMA[ih]
-        halo['lambda'] = LAMBDA[ih]
-        halo['v_TF'] = V_TF[ih]
-        halo['a'] = SAXISMAJOR[ih]*rete*1e3
-        halo['b'] = SAXISINTERMEDIATE[ih]*rete*1e3
-        halo['c'] = SAXISMINOR[ih]*rete*1e3
-        halo['sersic'] = SERSIC[ih]
+        halo['Vsigma'] = vsigma[ih]
+        halo['lambda'] = lambda_ensellem[ih]
+        halo['v_TF'] = tully_fisher_velocities[ih]
+        halo['a'] = s_axis_major[ih]*rete*1e3
+        halo['b'] = s_axis_intermediate[ih]*rete*1e3
+        halo['c'] = s_axis_minor[ih]*rete*1e3
+        halo['sersic'] = sersic_indices[ih]
         #CALIPSO
-        halo['lum_u'] = LUMU[ih]
-        halo['lum_g'] = LUMG[ih]
-        halo['lum_r'] = LUMR[ih]
-        halo['lum_i'] = LUMI[ih]
-        halo['sb_u'] = SBU[ih]
-        halo['sb_g'] = SBG[ih]
-        halo['sb_r'] = SBR[ih]
-        halo['sb_i'] = SBI[ih]
-        halo['ur_color'] = UR_COLOR[ih]
-        halo['gr_color'] = GR_COLOR[ih]
-        halo['sersic_lum'] = SERSIC_LUM[ih]
+        halo['lum_u'] = lum_u[ih]
+        halo['lum_g'] = lum_g[ih]
+        halo['lum_r'] = lum_r[ih]
+        halo['lum_i'] = lum_i[ih]
+        halo['sb_u'] = sb_u[ih]
+        halo['sb_g'] = sb_g[ih]
+        halo['sb_r'] = sb_r[ih]
+        halo['sb_i'] = sb_i[ih]
+        halo['ur_color'] = ur_color[ih]
+        halo['gr_color'] = gr_color[ih]
+        halo['sersic_lum'] = sersic_index_lum[ih]
         haloes.append(halo)
 
     total_iteration_data.append(iteration_data)
@@ -1150,7 +1196,7 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
 
     ###########################################
     ### SAVING PARTICLES in .npy (python friendly)
-    if write_particles and len(data)>0:
+    if WRITE_PARTICLES and len(data)>0:
         string_it = f'{iteration:05d}'
         new_groups = np.array(new_groups, dtype=object)
         new_groups = new_groups[argsort_part]
@@ -1159,7 +1205,7 @@ for it_count, iteration in enumerate(range(first, last+step, step)):
     ###########################################
 
 
-write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = catalogue_name)
+write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = CATALOGUE_NAME)
 
 
 ########## ########## ########## ########## ########## 
