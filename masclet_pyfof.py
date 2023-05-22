@@ -234,7 +234,7 @@ if CALIPSO_FLAG:
     N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS = pycalipso.readFilters()
     W_VEGA, FLUX_VEGA, N_VEGA = pycalipso.readVega(ZP_5556)
     print('.. done')
-    dlum=1.e-5 #10 pc --> absolute mag
+    dlum = 1.e-5 #10 pc --> absolute mag
     magssp = np.zeros((N_AGES,N_Z,N_F))
     fluxssp = np.zeros((N_AGES,N_Z,N_F))
     LUMU = np.zeros((N_AGES,N_Z))
@@ -594,7 +594,6 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         merger_type = np.zeros(num_halos, dtype=np.int32)
         for ih, halo in enumerate(new_groups): 
             oripas = st_oripa[halo]
-            masses = st_mass[halo]
             mass_intersections = np.zeros(len(omm)) # mass coming from haloes in the iteration before
             nmergs = 0
             for oih, ooripas in enumerate(oripas_before):
@@ -704,6 +703,8 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         # - SSP is in Lo A^-1 Mo^-1
         # - The luminosity weights are in g-band (see pycalipso.make_light)
         # - Care should be taken in the spectral range in which calculations are done. The filter ranges must be inside.
+        # - Surface brightness can be: central surface brightness, or surface brightness within the effective radius
+
 
         # See that this arrays are already sorted by number of particles
         lum_u = np.zeros(num_halos)
@@ -714,6 +715,10 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         sb_g = np.zeros(num_halos)
         sb_r = np.zeros(num_halos)
         sb_i = np.zeros(num_halos)
+        central_u = np.zeros(num_halos)
+        central_g = np.zeros(num_halos)
+        central_r = np.zeros(num_halos)
+        central_i = np.zeros(num_halos)
         ur_color = np.zeros(num_halos)
         gr_color = np.zeros(num_halos)
         sersic_index_lum = np.zeros(num_halos)
@@ -768,7 +773,8 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             for ihal in tqdm(range(num_halos)):
                 npart = num_particles[ihal] # number of particles in the halo
                 halo = new_groups_calipso[ihal] # halo particle indices for array slicing
-
+                halo = np.array(halo, dtype = int)
+                
                 mass = st_mass[halo] #mass of halo particles
                 met = st_met[halo] #metallicity of halo particles
                 age = st_age[halo] #age of halo particles
@@ -823,6 +829,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 (   fluxtot,
                     lumtotu, lumtotg, lumtotr, lumtoti, 
                     sb_u_tot, sb_g_tot, sb_r_tot, sb_i_tot, 
+                    central_sb_u, central_sb_g, central_sb_r, central_sb_i,
                     gr, ur,
                     sbf, magf, fluxf    )  = pycalipso.main(calipso_input, star_particle_data, 
                                                         ncell, vel_LOS, tam_i, tam_j, effective_radius)
@@ -846,6 +853,10 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 sb_g[ihal] += sb_g_tot
                 sb_r[ihal] += sb_r_tot
                 sb_i[ihal] += sb_i_tot
+                central_u[ihal] += central_sb_u
+                central_g[ihal] += central_sb_g
+                central_r[ihal] += central_sb_r
+                central_i[ihal] += central_sb_i
                 ur_color[ihal] += ur
                 gr_color[ihal] += gr
                 if n>0.:
@@ -882,6 +893,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 (   fluxtot,
                     lumtotu, lumtotg, lumtotr, lumtoti,
                     sb_u_tot, sb_g_tot, sb_r_tot, sb_i_tot,
+                    central_sb_u, central_sb_g, central_sb_r, central_sb_i,
                     gr, ur,
                     sbf, magf, fluxf    )  = pycalipso.main(calipso_input, star_particle_data,
                                                         ncell, vel_LOS, tam_i, tam_j, effective_radius)
@@ -905,6 +917,10 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 sb_g[ihal] += sb_g_tot
                 sb_r[ihal] += sb_r_tot
                 sb_i[ihal] += sb_i_tot
+                central_u[ihal] += central_sb_u
+                central_g[ihal] += central_sb_g
+                central_r[ihal] += central_sb_r
+                central_i[ihal] += central_sb_i
                 ur_color[ihal] += ur
                 gr_color[ihal] += gr
                 if n>0.:
@@ -941,6 +957,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 (   fluxtot,
                     lumtotu, lumtotg, lumtotr, lumtoti,
                     sb_u_tot, sb_g_tot, sb_r_tot, sb_i_tot,
+                    central_sb_u, central_sb_g, central_sb_r, central_sb_i,
                     gr, ur,
                     sbf, magf, fluxf    )  = pycalipso.main(calipso_input, star_particle_data,
                                                             ncell, vel_LOS, tam_i, tam_j, effective_radius)
@@ -964,6 +981,10 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 sb_g[ihal] += sb_g_tot
                 sb_r[ihal] += sb_r_tot
                 sb_i[ihal] += sb_i_tot
+                central_u[ihal] += central_sb_u
+                central_g[ihal] += central_sb_g
+                central_r[ihal] += central_sb_r
+                central_i[ihal] += central_sb_i
                 ur_color[ihal] += ur
                 gr_color[ihal] += gr
                 if n>0.:
@@ -1000,6 +1021,10 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 sb_g[ihal] /= 3.
                 sb_r[ihal] /= 3.
                 sb_i[ihal] /= 3.
+                central_u[ihal] /= 3.
+                central_g[ihal] /= 3.
+                central_r[ihal] /= 3.
+                central_i[ihal] /= 3.
                 ur_color[ihal] /= 3.
                 gr_color[ihal] /= 3.
                 if sersic_counter[ihal]>0:
@@ -1083,10 +1108,10 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         halo['lum_g'] = lum_g[ih]
         halo['lum_r'] = lum_r[ih]
         halo['lum_i'] = lum_i[ih]
-        halo['sb_u'] = sb_u[ih]
-        halo['sb_g'] = sb_g[ih]
-        halo['sb_r'] = sb_r[ih]
-        halo['sb_i'] = sb_i[ih]
+        halo['sb_u'] = central_u[ih]
+        halo['sb_g'] = central_g[ih]
+        halo['sb_r'] = central_r[ih]
+        halo['sb_i'] = central_i[ih]
         halo['ur_color'] = ur_color[ih]
         halo['gr_color'] = gr_color[ih]
         halo['sersic_lum'] = sersic_index_lum[ih]
