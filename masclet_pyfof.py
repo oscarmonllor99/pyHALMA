@@ -253,11 +253,8 @@ if CALIPSO_FLAG:
             LUMR[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 2]-RSUN)) #luminosity in r filter (R band more or less)
             LUMI[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 3]-ISUN)) #luminosity in i filter (I band more or less)
 
-            
-    CLOSEST_START = np.abs(L_START/WAVELENGHTS - 1)
-    CLOSEST_END = np.abs(L_END/WAVELENGHTS - 1)
-    I_START = np.argmin(CLOSEST_START) 
-    I_END = np.argmin(CLOSEST_END) 
+    I_START = np.argmin(np.abs(L_START - WAVELENGHTS)) 
+    I_END = np.argmin(np.abs(L_END - WAVELENGHTS)) 
 
     print('Spectrum will be written in the range:', WAVELENGHTS[I_START], WAVELENGHTS[I_END], '(A)')
     DISP=WAVELENGHTS[2]-WAVELENGHTS[1] #resolución espectral

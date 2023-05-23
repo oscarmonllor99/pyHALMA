@@ -256,32 +256,6 @@ def clean_cell(cx, cy, cz, M, RRHH, grid, part_list, st_x, st_y, st_z, st_vx, st
 
 
 @njit
-def escape_velocity_cleaning(cx, cy, cz, vx, vy, vz, M, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, control, factor_v):
-    npart = len(part_list)
-    mass = M*units.sun_to_kg
-    G = units.G_isu
-    for ip in range(npart):
-        if bool(control[ip]):
-            ipp = part_list[ip]
-            dx = cx - st_x[ipp]
-            dy = cy - st_y[ipp]
-            dz = cz - st_z[ipp]
-            dist = (dx**2 + dy**2 + dz**2)**0.5 * units.mpc_to_m
-
-            v_esc = (2*G*mass/dist)**0.5
-
-            dvx = vx - st_vx[ipp]
-            dvy = vy - st_vy[ipp]
-            dvz = vz - st_vz[ipp]
-            V = (dvx**2 + dvy**2 + dvz**2)**0.5 * 1e3
-
-            if V > factor_v*v_esc:
-                control[ip] = 0
-
-    return control
-
-
-@njit
 def half_mass_radius(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass):
     npart = len(part_list)
     #FIRST SORT PARTICLES BY DISTANCE TO CM

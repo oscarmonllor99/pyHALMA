@@ -18,15 +18,15 @@ OLD MASCLET (0 -> no, 1 -> yes )----------------------------------------->
 WRITE HALO PARTICLES (0 -> no, 1 -> yes ) ------------------------------->
 0
 CALCULATE RPS (0 -> no, 1 -> yes ) -------------------------------------->
-1
+0
 Name for the catalogue -------------------------------------------------->
 halma_catalogue_from_PYFOF_cluster_2023_18.res
-Number of CPU cores for NUMBA to parallelize ---------------------------->
+Number of CPU cores for NUMBA and OMP to parallelize --------------------->
 24
 ***************************************************************************
 *************CALIPSO PARAMETERS********************************************
 CALIPSO (0 -> no, 1 -> yes ) --------------------------------------------->
-0
+1
 VEGA zero point erg cm^-2 s^-1 A^-1, Hayes 1985 -------------------------->
 3.44e-9
 Surface Brightness threshold (mag/arcsec^2) ------------------------------>
