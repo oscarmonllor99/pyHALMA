@@ -729,7 +729,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             print()
             print('Establishing cosmology')
             print()
-
+        
             #Sorting haloes
             new_groups_calipso = np.array(new_groups, dtype = object)[argsort_part]
 

@@ -8,6 +8,8 @@ import time
 # our modules
 sys.path.append('/home/monllor/projects/')
 from masclet_framework import units, tools
+import gas_unbinding
+        
 
 @njit
 def patch_to_particles(patch_res, patch_rx, patch_ry, patch_rz, patch_nx, patch_ny, 
@@ -167,6 +169,29 @@ def brute_force_binding_energy(total_mass, total_x, total_y, total_z, gas_x, gas
         
     return binding_energy
 
+def brute_force_binding_energy_fortran(total_mass, total_x, total_y, total_z, gas_x, gas_y, gas_z):
+
+    # match the types with the fortran routine
+    ntotal_f90 = np.int32(len(total_mass))
+    ngas_f90 = np.int32(len(gas_x))
+    total_mass_f90 = np.float32(total_mass)
+    total_x_f90 = np.float32(total_x)
+    total_y_f90 = np.float32(total_y)
+    total_z_f90 = np.float32(total_z)
+    gas_x_f90 = np.float32(gas_x)
+    gas_y_f90 = np.float32(gas_y)
+    gas_z_f90 = np.float32(gas_z)
+    
+    # call the fortran routine
+    ncores_f90 = np.int32(get_num_threads())
+    
+    binding_energy = gas_unbinding.gas_unbinding.brute_force_binding_energy(ncores_f90, ntotal_f90, 
+                                                                            total_mass_f90, total_x_f90, 
+                                                                            total_y_f90, total_z_f90,
+                                                                            ngas_f90, gas_x_f90, 
+                                                                            gas_y_f90, gas_z_f90)
+    return binding_energy
+
 
 def RPS(rete, L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data, cx, cy, cz, vx, vy, vz, Rrps):
     ##################################################################################
@@ -241,7 +266,8 @@ def RPS(rete, L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data,
     # print('Calculating binding energy...')
 
     # CALCULATE BINDING ENERGY OF EACH GAS PARTICLE
-    binding_energy = brute_force_binding_energy(total_mass, total_x, total_y, total_z, gas_x, gas_y, gas_z)
+    binding_energy = brute_force_binding_energy_fortran(total_mass, total_x, total_y, total_z, 
+                                                        gas_x, gas_y, gas_z)
     binding_energy = - binding_energy # binding energy is negative
 
     # Now the variable binding_energy is in units of Msun/mpc, we need to convert it to km^2/s^2
