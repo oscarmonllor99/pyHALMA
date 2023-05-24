@@ -171,6 +171,7 @@ contains
     !f2py depend(npart) :: x, y, z, mass
 
     ! Local
+    real :: mass_tot
     real, dimension(3) :: rvec
     integer :: ip, j, i, ii
     real, dimension(3,3) :: inertia_tensor
@@ -180,6 +181,7 @@ contains
     !Inertia tensor calculation
     inertia_tensor(:,:) = 0.
     eigenvalues(:) = 0.
+    mass_tot = 0.
 
     !$OMP PARALLEL SHARED(npart, x, y, z, mass, inertia_tensor) &
     !$OMP          PRIVATE(ip)
@@ -193,9 +195,13 @@ contains
             inertia_tensor(i,j) = inertia_tensor(i,j) + mass(ip)*rvec(i)*rvec(j)
         end do
         end do
+        mass_tot = mass_tot + mass(ip)
     end do
     !$OMP END DO
     !$OMP END PARALLEL
+
+    ! Inertia tensor normalization
+    inertia_tensor = inertia_tensor/mass_tot
 
     ! Inertia tensor diagonalization
     call diagonalise(inertia_tensor, eigenvalues)
@@ -277,16 +283,9 @@ contains
     !$OMP END PARALLEL
 
     !to avoid division by zero
-    where (quantas_x(:,:) == 0) quantas_x(:,:) = 1
-    where (quantas_y(:,:) == 0) quantas_y(:,:) = 1
-    where (quantas_z(:,:) == 0) quantas_z(:,:) = 1
-    where (SD_x(:,:) == 0.) SD_x(:,:) = 1.
-    where (SD_y(:,:) == 0.) SD_y(:,:) = 1.
-    where (SD_z(:,:) == 0.) SD_z(:,:) = 1.
-
-    VCM_x(:,:) = VCM_x(:,:)/SD_x(:,:)
-    VCM_y(:,:) = VCM_y(:,:)/SD_y(:,:)
-    VCM_z(:,:) = VCM_z(:,:)/SD_z(:,:)
+    where (SD_x(:,:) /= 0.) VCM_x(:,:) = VCM_x(:,:)/SD_x(:,:)
+    where (SD_y(:,:) /= 0.) VCM_y(:,:) = VCM_y(:,:)/SD_y(:,:)
+    where (SD_z(:,:) /= 0.) VCM_z(:,:) = VCM_z(:,:)/SD_z(:,:)
 
 
 
@@ -295,11 +294,11 @@ contains
     SIG_1d_z = 0.
 
     !$OMP PARALLEL SHARED(VCM_x, VCM_y, VCM_z, npart, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, &
-    !$OMP                 st_mass, cx, cy, cz, grid, SIG_1d_x, SIG_1d_y, SIG_1d_z) &
+    !$OMP                 cx, cy, cz, grid, SIG_1d_x, SIG_1d_y, SIG_1d_z) &
     !$OMP          PRIVATE(ip, ipp, ix, iy, iz)
     !$OMP DO REDUCTION(+:SIG_1d_x, SIG_1d_y, SIG_1d_z)
     do ip=1,npart
-        ipp = part_list(ip)
+        ipp = part_list(ip) 
         ix = minloc(abs(grid - (st_x(ipp) - cx)), dim = 1)
         iy = minloc(abs(grid - (st_y(ipp) - cy)), dim = 1)
         iz = minloc(abs(grid - (st_z(ipp) - cz)), dim = 1)
@@ -310,9 +309,9 @@ contains
     !$OMP END DO
     !$OMP END PARALLEL
 
-    SIG_1d_x(:,:) = sqrt(SIG_1d_x(:,:)/quantas_x(:,:))
-    SIG_1d_y(:,:) = sqrt(SIG_1d_y(:,:)/quantas_y(:,:))
-    SIG_1d_z(:,:) = sqrt(SIG_1d_z(:,:)/quantas_z(:,:))
+    where (quantas_x(:,:) /= 0) SIG_1d_x(:,:) = sqrt(SIG_1d_x(:,:)/quantas_x(:,:))
+    where (quantas_y(:,:) /= 0) SIG_1d_y(:,:) = sqrt(SIG_1d_y(:,:)/quantas_y(:,:))
+    where (quantas_z(:,:) /= 0) SIG_1d_z(:,:) = sqrt(SIG_1d_z(:,:)/quantas_z(:,:))
 
 
 
@@ -330,9 +329,9 @@ contains
     !$OMP DO REDUCTION(+:SIG_1D_x_05, SIG_1D_y_05, SIG_1D_z_05, counter_x, counter_y, counter_z)
     do ip=1,npart
         ipp = part_list(ip)
-        dx = cx - st_x(ipp)
-        dy = cy - st_y(ipp)
-        dz = cz - st_z(ipp)
+        dx = st_x(ipp) - cx
+        dy = st_y(ipp) - cy
+        dz = st_z(ipp) - cz
         ix = minloc(abs(grid - dx), dim = 1)
         iy = minloc(abs(grid - dy), dim = 1)
         iz = minloc(abs(grid - dz), dim = 1)
@@ -375,6 +374,13 @@ contains
     !V/sigma and lambda part (Fast-Slow rotator)
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+    V_sigma_x = 0.
+    lambda_x = 0.
+    V_sigma_y = 0.
+    lambda_y = 0.
+    V_sigma_z = 0.
+    lambda_z = 0.
+
     !!! XY plane
     sumV = 0.
     sumSigma = 0.
@@ -392,10 +398,14 @@ contains
             sumDown = sumDown + SD_z(ix, iy) * Rbin * sqrt(VCM_z(ix, iy)**2 + SIG_1D_z(ix, iy)**2)
         endif
     enddo
-    enddo
 
-    V_sigma_z = sqrt(sumV/sumSigma)
-    lambda_z = sumUp/sumDown
+    enddo
+    if (sumSigma > 0.) then
+        V_sigma_z = sqrt(sumV/sumSigma)
+    endif
+    if (sumDown > 0.) then
+        lambda_z = sumUp/sumDown
+    endif
 
     !!! XZ plane
     sumV = 0.
@@ -416,8 +426,12 @@ contains
     enddo
     enddo
 
-    V_sigma_y = sqrt(sumV/sumSigma)
-    lambda_y = sumUp/sumDown
+    if (sumSigma > 0.) then
+        V_sigma_y = sqrt(sumV/sumSigma)
+    endif
+    if (sumDown > 0.) then
+        lambda_y = sumUp/sumDown
+    endif
 
     !!! YZ plane
     sumV = 0.
@@ -438,8 +452,12 @@ contains
     enddo
     enddo
 
-    V_sigma_x = sqrt(sumV/sumSigma)
-    lambda_x = sumUp/sumDown
+    if (sumSigma > 0.) then
+        V_sigma_x = sqrt(sumV/sumSigma)
+    endif
+    if (sumDown > 0.) then
+        lambda_x = sumUp/sumDown
+    endif
 
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     !AVERAGE

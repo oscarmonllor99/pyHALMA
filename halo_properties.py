@@ -598,7 +598,7 @@ def sigma_projections_fortran(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, 
     npart_f90 = np.int32(len(part_list))
     grid_f90 = np.float32(grid)
     n_cell_f90 = np.int32(n_cell)
-    part_list_f90 = np.int32(part_list)
+    part_list_f90 = np.int32(1    +     part_list)  #Fortran starts at 1
     st_x_f90 = np.float32(st_x)
     st_y_f90 = np.float32(st_y)
     st_z_f90 = np.float32(st_z)
