@@ -7,7 +7,7 @@ from tqdm import tqdm
 from math import sqrt, log10, acos
 import matplotlib.pyplot as plt
 from scipy.interpolate import RegularGridInterpolator
-
+import time
 #Our things
 sys.path.append('/home/monllor/projects/')
 from masclet_framework import read_masclet, units, tools
@@ -501,11 +501,9 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
 
             #EFFECTIVE RADIUS
             rad05[ihal] = halo_properties.half_mass_radius(cx, cy, cz, mass, part_list, st_x, st_y, st_z, st_mass)
-
             (rad05_x[ihal], 
              rad05_y[ihal], 
              rad05_z[ihal]) = halo_properties.half_mass_radius_proj(cx, cy, cz, mass, part_list, st_x, st_y, st_z, st_mass)
-            
             #BULK VELOCITY
             (velocities_x[ihal], 
              velocities_y[ihal], 
@@ -528,7 +526,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             #SHAPE
             (s_axis_major[ihal], 
              s_axis_intermediate[ihal], 
-             s_axis_minor[ihal]) = halo_properties.halo_shape(part_list, st_x, st_y, st_z, st_mass, cx, cy, cz, rad05[ihal])
+             s_axis_minor[ihal]) = halo_properties.halo_shape_fortran(part_list, st_x, st_y, st_z, st_mass, cx, cy, cz, rad05[ihal])
             
             #SÉRSIC INDEX
             sersic_indices[ihal] = halo_properties.simple_sersic_index(part_list, st_x, st_y, st_z, center_x[ihal], center_y[ihal], center_z[ihal], rad05[ihal])
@@ -547,9 +545,10 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
              sig_1D_y[ihal], 
              sig_1D_z[ihal], 
              vsigma[ihal], 
-             lambda_ensellem[ihal]) = halo_properties.sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, 
-                                                                        st_vx, st_vy, st_vz, st_mass, cx, cy, cz, 
-                                                                        rad05_x[ihal], rad05_y[ihal], rad05_z[ihal], LL)
+             lambda_ensellem[ihal]) = halo_properties.sigma_projections_fortran(grid, n_cell, part_list, st_x, st_y, st_z, 
+                                                                                st_vx, st_vy, st_vz, st_mass, cx, cy, cz, 
+                                                                                rad05_x[ihal], rad05_y[ihal], rad05_z[ihal], 
+                                                                                LL)
             
             # METALLICITY AND AGE
             (stellar_ages[ihal], 
@@ -620,7 +619,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                         if 1/20 < mer_frac < 1/3:
                             merger_type[ih] = 2 #MINOR MERGER
 
-                        else:                #ACCRETION
+                        else:                   #ACCRETION
                             merger_type[ih] = 3 
 
         print('-------> DONE <-------')
@@ -729,7 +728,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             print()
             print('Establishing cosmology')
             print()
-        
+
             #Sorting haloes
             new_groups_calipso = np.array(new_groups, dtype = object)[argsort_part]
 

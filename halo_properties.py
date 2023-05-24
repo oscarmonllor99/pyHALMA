@@ -1,13 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from numba import njit, prange
+from numba import njit, prange, get_num_threads
 import sys
 from scipy.ndimage import gaussian_filter
 from scipy.optimize import curve_fit
 #Our things
 sys.path.append('/home/monllor/projects/')
 from masclet_framework import units, particles
-
+import particle
 
 @njit(parallel = True)
 def total_mass(part_list, st_mass):
@@ -439,7 +439,7 @@ def sigma_effective(part_list, R05, st_x, st_y, st_z, st_vx, st_vy, st_vz, cx, c
         return 0.
 
 
-@njit(parallel = True, fastmath=True, cache=True)
+@njit(parallel = True, fastmath=True, cache = True)
 def sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, cx, cy, cz, R05x, R05y, R05z, ll):
     Npart = len(part_list)
     quantas_x = np.ones((n_cell, n_cell), dtype = np.int32) #CUANTAS PARTÍCULAS EN CADA CELDA
@@ -592,6 +592,42 @@ def sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, s
         return 0., 0., 0., 0., 0.
     
 
+def sigma_projections_fortran(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, 
+                              cx, cy, cz, R05x, R05y, R05z, ll):
+    #input
+    npart_f90 = np.int32(len(part_list))
+    grid_f90 = np.float32(grid)
+    n_cell_f90 = np.int32(n_cell)
+    part_list_f90 = np.int32(part_list)
+    st_x_f90 = np.float32(st_x)
+    st_y_f90 = np.float32(st_y)
+    st_z_f90 = np.float32(st_z)
+    st_vx_f90 = np.float32(st_vx)
+    st_vy_f90 = np.float32(st_vy)
+    st_vz_f90 = np.float32(st_vz)
+    st_mass_f90 = np.float32(st_mass)
+    cx_f90 = np.float32(cx)
+    cy_f90 = np.float32(cy)
+    cz_f90 = np.float32(cz)
+    R05x_f90 = np.float32(R05x)
+    R05y_f90 = np.float32(R05y)
+    R05z_f90 = np.float32(R05z)
+    ll_f90 = np.float32(ll)
+
+    #calling fortran
+    ncore_f90 = np.int32(get_num_threads())
+    SIG_1D_x_05, SIG_1D_y_05, SIG_1D_z_05, V_sigma, lambda_ = particle.particle.sigma_projections(
+
+        ncore_f90, npart_f90, grid_f90, n_cell_f90, part_list_f90, st_x_f90, st_y_f90, st_z_f90, st_vx_f90, 
+        st_vy_f90, st_vz_f90, st_mass_f90, cx_f90, cy_f90, cz_f90, R05x_f90, R05y_f90, R05z_f90, ll_f90
+        
+    )
+
+    return SIG_1D_x_05, SIG_1D_y_05, SIG_1D_z_05, V_sigma, lambda_
+
+
+
+
 @njit(parallel = True)
 def avg_age_metallicity(part_list, st_age, st_met, st_mass, cosmo_time):
     mass = 0.
@@ -627,6 +663,21 @@ def halo_shape(part_list, st_x, st_y, st_z, st_mass, cx, cy, cz, RAD05):
         c = semiaxis[0]
         return a, b, c
 
+def halo_shape_fortran(part_list, st_x, st_y, st_z, st_mass, cx, cy, cz, RAD05):
+    x = np.float32(st_x[part_list] - cx)
+    y = np.float32(st_y[part_list] - cy)
+    z = np.float32(st_z[part_list] - cz)
+    mass = np.float32(st_mass[part_list])
+    npart = np.int32(len(part_list))
+
+    #CALL FORTRAN MODULE
+    ncore = np.int32(get_num_threads())
+    eigenvalues = particle.particle.halo_shape(ncore, npart, x, y, z, mass)
+    a = eigenvalues[0]
+    b = eigenvalues[1]
+    c = eigenvalues[2]
+
+    return a,b,c
 
 @njit
 def simple_fit(R_list_centers, dR, x_pos, y_pos, z_pos):

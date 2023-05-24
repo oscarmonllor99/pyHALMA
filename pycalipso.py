@@ -7,7 +7,7 @@ from astropy.io import fits
 from math import log10
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
-import calipso_subroutines
+import calipso
 import time
 
 ### AVISOS PARA ENTENDER EL CÓDIGO:
@@ -165,7 +165,7 @@ def readVega(zp_5556):
 
 
 ##################################################################################################
-# MAGNITUDE CALCULATION FUNCTIONS #
+# MAGNITUDE CALCULATION FUNCTIONS, NOW IMPLEMENTED IN FORTRAN
 ##################################################################################################
 @njit
 def from_ws_to_wfilt(fs, wfilt, nfilt, ws, ns):
@@ -240,8 +240,6 @@ def mag_v1_0(ws, fs, ns, fmag, flux, nf, nlf, wf, rf, wv, fv, nv, dlum):
                 fmag[i_f]=fmag[i_f]+0.37
 
             ZP[i_f]=2.5*log10(sum_v)+cfact-2.401
-
-
 
 ##################################################################################################
 ##################################################################################################
@@ -323,6 +321,8 @@ def make_light(npart, mass, age, met, wavelenghts, SSP, age_span, Z_span, nw, nZ
 
     return flux_cell, flux_cell_sig, fluxtot, vell_malla, sigl_malla, lum_malla, twl, Zwl, vell2_malla
 
+
+
 # FORTRAN WRAPPER
 def make_light_fortran(npart, mass, age, met, wavelenghts, SSP, age_span, Z_span, nw, nZ, nages, istart, iend, disp, lumg, 
                         tam_i, tam_j, vel, nx, ny, clight):
@@ -356,7 +356,7 @@ def make_light_fortran(npart, mass, age, met, wavelenghts, SSP, age_span, Z_span
     (
      flux_cell, flux_cell_sig, fluxtot, vell_malla, 
      sigl_malla, lum_malla, twl, Zwl, vell2_malla
-     ) = calipso_subroutines.calipso.make_light(ncores_f90, npart_f90, mass_f90, age_f90, met_f90, wavelenghts_f90, SSP_f90, 
+     ) = calipso.calipso.make_light(ncores_f90, npart_f90, mass_f90, age_f90, met_f90, wavelenghts_f90, SSP_f90, 
                                                 age_span_f90, Z_span_f90, nw_f90, nZ_f90, nages_f90, istart_f90, iend_f90, 
                                                 disp_f90, lumg_f90, tam_i_f90, tam_j_f90, vel_f90, nx_f90, ny_f90, clight_f90)
 
@@ -402,7 +402,7 @@ def magANDfluxes_fortran(wavelenghts, nw, nf, nlf, wf, rf, wv, fv, nv, dlum, nx,
     #CALL FORTRAN MODULE
     ncores_f90 = np.int32(get_num_threads())
 
-    SBf, magf, fluxf = calipso_subroutines.calipso.magandfluxes(ncores_f90, wavelenghts_f90, nw_f90, 
+    SBf, magf, fluxf = calipso.calipso.magandfluxes(ncores_f90, wavelenghts_f90, nw_f90, 
                                                                 nf_f90, nlf_f90, nmaxf_f90, wf_f90, rf_f90, 
                                                                 wv_f90, fv_f90, nv_f90, dlum_f90, 
                                                                 nx_f90, ny_f90, flux_cell_f90, area_arc_f90)
@@ -473,16 +473,6 @@ def put_particles_in_grid(grid_centers, x, y, z):
 def main(calipso_input, star_particle_data, ncell, vel_LOS, tam_i, tam_j, effective_radius):
 
     ####### INPUT FORMAT
-
-    # calipso_input = [ CLIGHT, WAVELENGHTS, SSP, 
-    #                     AGE_SPAN, Z_SPAN, MH_SPAN,N_AGES, N_Z, N_W,
-    #                     N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, 
-    #                     W_VEGA, FLUX_VEGA, N_VEGA,
-    #                     I_START, I_END, DISP, LUMG,
-    #                     zeta, dlum, arcsec2kpc, area_arc ]
-
-    # star_particle_data = [npart, mass, met, age]
-
     # ncell is the number of cells in each direction (x,y,z)
     # vel_LOS is the line of sight velocity of each particle
     # tam_i, tam_j are the particle indices in the grid for each particle
@@ -502,8 +492,8 @@ def main(calipso_input, star_particle_data, ncell, vel_LOS, tam_i, tam_j, effect
     num_cell, mass_cell, vel_malla, sig_cell, twm, tmed, Zwm, Zmed = mean_mesh2D(ncell, ncell, npart, 
                                                                                  mass, met, age, 
                                                                                  vel_LOS, tam_i, tam_j)
-    # Finding fluxes in each cell and luminosity weighted quantities
 
+    # Finding fluxes in each cell and luminosity weighted quantities
     (flux_cell, flux_cell_sig, fluxtot, vell_malla, 
     sigl_malla, lum_malla, twl, Zwl, vell2_malla) = make_light_fortran(npart, mass, age, 
                                                                         met, WAVELENGHTS, 
@@ -544,8 +534,8 @@ def main(calipso_input, star_particle_data, ncell, vel_LOS, tam_i, tam_j, effect
     sbf, magf, fluxf = magANDfluxes_fortran(WAVELENGHTS, N_W, N_F, N_LINES_FILTERS,
                                             W_FILTERS, RESPONSE_FILTERS, W_VEGA, FLUX_VEGA, N_VEGA,
                                             dlum, ncell, ncell, flux_cell, area_arc)
-    
-    sbf[fluxf==0.] = np.nan 
+
+    sbf[fluxf==0.] = np.nan # if flux is zero, magnitudes are undefined
     magf[fluxf==0.] = np.nan
 
     # Central surface brightness in each filter

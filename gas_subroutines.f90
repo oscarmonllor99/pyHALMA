@@ -1,7 +1,7 @@
 ! Created on Mon May 24 2023
 ! In this module the heaviest part of the gas unbinding is done
 
-MODULE gas_unbinding
+MODULE gas
     implicit none
 
 contains 
