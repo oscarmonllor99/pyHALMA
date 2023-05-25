@@ -8,6 +8,7 @@ from scipy.optimize import curve_fit
 sys.path.append('/home/monllor/projects/')
 from masclet_framework import units, particles
 import particle
+import halo_gas
 
 @njit(parallel = True)
 def total_mass(part_list, st_mass):
@@ -253,6 +254,87 @@ def clean_cell(cx, cy, cz, M, RRHH, grid, part_list, st_x, st_y, st_z, st_vx, st
                                                                                                         quantas_cell, sig3D_cell)
 
     return cx, cy, cz, M, RRHH, control, which_cell_x, which_cell_y, which_cell_z
+
+
+
+def escape_velocity_unbinding_fortran(
+rete, L, ncoarse, grid_data, gas_data, masclet_dm_data, cx, cy, cz, vx, vy, vz, Rmax,
+part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, factor_v
+                                     ):
+    #####################  LOAD PARTICLE DATA
+    # DM
+    dm_x = masclet_dm_data[0]
+    dm_y = masclet_dm_data[1]
+    dm_z = masclet_dm_data[2]
+    dm_mass = masclet_dm_data[3]*units.mass_to_sun #in Msun
+    # Search for the DM particles inside R05
+    dm_gcd = np.sqrt((dm_x-cx)**2 + (dm_y-cy)**2 + (dm_z-cz)**2) # galaxy-centric distance
+    inside_Rrps = dm_gcd < Rmax
+    dm_x = dm_x[inside_Rrps]
+    dm_y = dm_y[inside_Rrps]
+    dm_z = dm_z[inside_Rrps]
+    dm_mass = dm_mass[inside_Rrps]
+
+    # STARS
+    st_x_halo = st_x[part_list]
+    st_y_halo = st_y[part_list]
+    st_z_halo = st_z[part_list]
+    st_vx_halo = st_vx[part_list]
+    st_vy_halo = st_vy[part_list]
+    st_vz_halo = st_vz[part_list]
+    st_mass_halo = st_mass[part_list]
+
+    #####################
+
+    #####################  GAS AMR TO GAS PARTICLES
+    gas_x, gas_y, gas_z, _, _, _, gas_mass, _ = halo_gas.AMRgrid_to_particles(
+                                                            L, ncoarse, grid_data,gas_data, Rmax, cx, cy, cz
+                                                            )
+
+    # CHECK THAT THE GAS PARTICLES ARE INSIDE R05
+    gas_gcd = np.sqrt((gas_x-cx)**2 + (gas_y-cy)**2 + (gas_z-cz)**2) # galaxy-centric distance
+    inside_Rrps = gas_gcd < Rmax
+    gas_x = gas_x[inside_Rrps]
+    gas_y = gas_y[inside_Rrps]
+    gas_z = gas_z[inside_Rrps]
+    gas_mass = gas_mass[inside_Rrps]
+    
+    # FROM COMOVING VOLUME TO PHYSICAL VOLUME
+    gas_mass *= rete**3
+
+    #####################  
+
+    #####################  CALCULATE TOTAL ENERGY OF EACH GAS PARTICLE
+
+    # ARRAYS CONTAINING ALL PARTICLES POSITIONS AND MASSES
+    total_x = np.concatenate((gas_x, st_x_halo, dm_x))
+    total_y = np.concatenate((gas_y, st_y_halo, dm_y))
+    total_z = np.concatenate((gas_z, st_z_halo, dm_z))
+    total_mass = np.concatenate((gas_mass, st_mass_halo, dm_mass))   
+
+    # CALCULATE BINDING ENERGY OF EACH STAR PARTICLE
+    binding_energy = halo_gas.brute_force_binding_energy_fortran(total_mass, total_x, total_y, total_z, 
+                                                                st_x_halo, st_y_halo, st_z_halo)
+    binding_energy = - binding_energy # binding energy is negative
+
+    # Now the variable binding_energy is in units of Msun/mpc, we need to convert it to km^2/s^2
+    G_const = 4.3*1e-3 # in units of (km/s)^2 pc/Msun
+    G_const *= 1e-6 # in units of (km/s)^2 Mpc/Msun
+
+    binding_energy *= G_const # km^2 s^-2
+
+    #BINDING ENERGY IS HIGHER THAN THE ONE CALCULATED INSIDE RMAX:
+    binding_energy *= factor_v**2 # v_esc = 2*sqrt(2*|U|)
+
+    # CALCULTATE TOTAL ENERGY OF EACH GAS PARTICLE
+    gas_v2 = 0.5 * ( (st_vx_halo-vx)**2 + (st_vy_halo-vy)**2 + (st_vz_halo-vz)**2) # km^2 s^-2
+
+    # TOTAL ENERGY OF EACH GAS PARTICLE
+    total_energy = gas_v2 + binding_energy # km^2 s^-2
+
+    bound = total_energy <= 0.
+
+    return bound
 
 
 @njit

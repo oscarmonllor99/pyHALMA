@@ -8,7 +8,7 @@ import time
 # our modules
 sys.path.append('/home/monllor/projects/')
 from masclet_framework import units, tools
-import gas_unbinding
+import particle
         
 
 @njit
@@ -169,28 +169,34 @@ def brute_force_binding_energy(total_mass, total_x, total_y, total_z, gas_x, gas
         
     return binding_energy
 
-def brute_force_binding_energy_fortran(total_mass, total_x, total_y, total_z, gas_x, gas_y, gas_z):
+
+
+def brute_force_binding_energy_fortran(total_mass, total_x, total_y, total_z, test_x, test_y, test_z):
 
     # match the types with the fortran routine
-    ntotal_f90 = np.int32(len(total_mass))
-    ngas_f90 = np.int32(len(gas_x))
+    ntotal_f90 = np.int32(len(total_mass))    
+    ntest_f90 = np.int32(len(test_x))
+    if ntest_f90 == 0:
+        return np.array([])
+    
     total_mass_f90 = np.float32(total_mass)
     total_x_f90 = np.float32(total_x)
     total_y_f90 = np.float32(total_y)
     total_z_f90 = np.float32(total_z)
-    gas_x_f90 = np.float32(gas_x)
-    gas_y_f90 = np.float32(gas_y)
-    gas_z_f90 = np.float32(gas_z)
+    test_x_f90 = np.float32(test_x)
+    test_y_f90 = np.float32(test_y)
+    test_z_f90 = np.float32(test_z)
     
     # call the fortran routine
     ncores_f90 = np.int32(get_num_threads())
-    
-    binding_energy = gas_unbinding.gas_unbinding.brute_force_binding_energy(ncores_f90, ntotal_f90, 
-                                                                            total_mass_f90, total_x_f90, 
-                                                                            total_y_f90, total_z_f90,
-                                                                            ngas_f90, gas_x_f90, 
-                                                                            gas_y_f90, gas_z_f90)
+
+    binding_energy = particle.particle.brute_force_binding_energy(ncores_f90, ntotal_f90, 
+                                                                  total_mass_f90, total_x_f90, 
+                                                                  total_y_f90, total_z_f90,
+                                                                  ntest_f90, test_x_f90, 
+                                                                  test_y_f90, test_z_f90)
     return binding_energy
+
 
 
 def RPS(rete, L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data, cx, cy, cz, vx, vy, vz, Rrps):
@@ -236,7 +242,7 @@ def RPS(rete, L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data,
 
     # CHECK THAT THE GAS PARTICLES ARE INSIDE R05
     gas_gcd = np.sqrt((gas_x-cx)**2 + (gas_y-cy)**2 + (gas_z-cz)**2) # galaxy-centric distance
-    inside_Rrps = gas_gcd < 2*Rrps
+    inside_Rrps = gas_gcd < Rrps
     gas_x = gas_x[inside_Rrps]
     gas_y = gas_y[inside_Rrps]
     gas_z = gas_z[inside_Rrps]
@@ -249,8 +255,6 @@ def RPS(rete, L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data,
     # FROM COMOVING VOLUME TO PHYSICAL VOLUME
     gas_mass *= rete**3
 
-    # take into account that gas_mass should be corrected by the scale factor, 
-    # since it is density*cell_volume and this volume is in comoving coordinates
     #####################  
 
     #####################  CALCULATE TOTAL ENERGY OF EACH GAS PARTICLE
@@ -260,10 +264,6 @@ def RPS(rete, L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data,
     total_y = np.concatenate((gas_y, st_y, dm_y))
     total_z = np.concatenate((gas_z, st_z, dm_z))
     total_mass = np.concatenate((gas_mass, st_mass, dm_mass))
-
-    # print('Total number of particles (gas + dm + stars): ', len(total_x))
-    # print('Total number of gas particles: ', len(gas_x))
-    # print('Calculating binding energy...')
 
     # CALCULATE BINDING ENERGY OF EACH GAS PARTICLE
     binding_energy = brute_force_binding_energy_fortran(total_mass, total_x, total_y, total_z, 
@@ -276,28 +276,29 @@ def RPS(rete, L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data,
 
     binding_energy *= G_const # km^2 s^-2
 
+    # Consider that the binding energy is twice the calculated value
+    binding_energy *= 2. 
+
     # CALCULTATE TOTAL ENERGY OF EACH GAS PARTICLE
     gas_v2 = 0.5 * ( (gas_vx-vx)**2 + (gas_vy-vy)**2 + (gas_vz-vz)**2) # km^2 s^-2
 
     # TOTAL ENERGY OF EACH GAS PARTICLE
     total_energy = gas_v2 + binding_energy # km^2 s^-2
 
-    # print(np.max(gas_v2), np.max(binding_energy), np.max(total_energy))
-    # print(np.min(gas_v2), np.min(binding_energy), np.min(total_energy))
 
-    # BOUNDED AND UNBOUNDED GAS PARTICLES
-    unbounded = total_energy > 0.
-    bounded = total_energy <= 0.
+    # BOUND AND UNBOUND GAS PARTICLES
+    unbound = total_energy > 0.
+    bound = total_energy <= 0.
     # COLD AND HOT GAS PARTICLES
     cold = gas_temp < 5*1e4
     hot = gas_temp >= 5*1e4
 
     ##################### RETURN VARIABLES
     total_gas_mass = np.sum(gas_mass)
-    cold_bound_gas_mass = np.sum(gas_mass[cold*bounded])
+    cold_bound_gas_mass = np.sum(gas_mass[cold*bound])
     frac_cold_gas_mass = cold_bound_gas_mass/total_gas_mass
-    unbounded_cold_gas_mass = np.sum(gas_mass[unbounded*cold])
-    unbounded_hot_gas_mass = np.sum(gas_mass[unbounded*hot])
+    unbound_cold_gas_mass = np.sum(gas_mass[unbound*cold])
+    unbound_hot_gas_mass = np.sum(gas_mass[unbound*hot])
 
-    return total_gas_mass, frac_cold_gas_mass, unbounded_cold_gas_mass, unbounded_hot_gas_mass
+    return total_gas_mass, frac_cold_gas_mass, unbound_cold_gas_mass, unbound_hot_gas_mass
 

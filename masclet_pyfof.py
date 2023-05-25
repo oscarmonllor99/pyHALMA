@@ -66,6 +66,9 @@ with open('masclet_pyfof.dat', 'r') as f:
     f.readline()
     SIG_FIL, Q_FIL = np.array(f.readline().split()[0].split(','), dtype = np.float64)
     f.readline()
+    ESCAPE_CLEANING, FACTOR_V = np.array(f.readline().split()[0].split(','), dtype = np.float64)
+    ESCAPE_CLEANING = bool(int(ESCAPE_CLEANING))
+    f.readline()
     OLD_MASCLET = bool(int(f.readline()))
     f.readline()
     WRITE_PARTICLES = bool(int(f.readline()))
@@ -320,14 +323,13 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
     print('Redshift (z):', zeta)
 
     #READ GAS IF RPS
-    if RPS_FLAG:
-        print('RPS == True !!!! ')
+    if RPS_FLAG or ESCAPE_CLEANING:
         print('     Opening grid, clus and DM files')
 
         #READ CLUS
         gas_data = read_masclet.read_clus(iteration, path=PATH_RESULTS, parameters_path=PATH_RESULTS, digits=5, max_refined_level=1000, output_delta=True, 
-                                          output_v=True, output_pres=False, output_pot=False, output_opot=False, output_temp=True, output_metalicity=False,
-                                          output_cr0amr=True, output_solapst=True, is_mascletB=False, output_B=False, is_cooling=True, verbose=False)
+                                            output_v=True, output_pres=False, output_pot=False, output_opot=False, output_temp=True, output_metalicity=False,
+                                            output_cr0amr=True, output_solapst=True, is_mascletB=False, output_B=False, is_cooling=True, verbose=False)
 
 
         #READ DM
@@ -383,10 +385,24 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         for ihal in tqdm(range(len(groups))):
             # Particle indices, center of mass and mass
             part_list = np.array(groups[ihal])
-            cx, cy, cz, mass = halo_properties.center_of_mass(part_list, st_x, st_y, st_z, st_mass)
+            (cx, cy, cz, mass) = halo_properties.center_of_mass(part_list, st_x, st_y, st_z, st_mass)
+            (vx, vy, vz) = halo_properties.CM_velocity(mass, part_list, st_vx, st_vy, st_vz, st_mass)
+            most_distant_r = halo_properties.furthest_particle(cx, cy, cz, part_list, st_x, st_y, st_z)
+
+            #ESCAPE VELOCITY cleaning
+            if ESCAPE_CLEANING:
+                bound = halo_properties.escape_velocity_unbinding_fortran(
+                                        rete, L, NX, grid_data, gas_data, masclet_dm_data, cx, cy, cz, 
+                                        vx, vy, vz, most_distant_r, part_list, st_x, st_y, st_z, 
+                                        st_vx, st_vy, st_vz, st_mass, FACTOR_V
+                                        )
+                part_list = part_list[bound] 
+            
+            #RECENTERING AFTER ESCAPE VELOCITY CLEANING
+            (cx, cy, cz, mass) = halo_properties.center_of_mass(part_list, st_x, st_y, st_z, st_mass)
+            most_distant_r = halo_properties.furthest_particle(cx, cy, cz, part_list, st_x, st_y, st_z)
 
             #Create 3D grid with cellsize 2*LL for cleaning. Calculate most distant particle to center of mass
-            most_distant_r = halo_properties.furthest_particle(cx, cy, cz, part_list, st_x, st_y, st_z)
             grid = np.arange(- ( most_distant_r + LL ), most_distant_r + LL, 2*LL)
             n_cell = len(grid)
             vcm_cell = np.zeros((n_cell, n_cell, n_cell, 3))

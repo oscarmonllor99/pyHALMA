@@ -121,10 +121,10 @@ contains
        END DO
 
         RETURN
-       END
+       END SUBROUTINE
 
 !**********************************************************************
-       SUBROUTINE SORT_EIGEN(EIGENVALUES,N)
+    SUBROUTINE SORT_EIGEN(EIGENVALUES,N)
 !**********************************************************************
 !*      Sorts the eigenvalues in increasing order
 !**********************************************************************
@@ -152,7 +152,7 @@ contains
     END DO
 
     RETURN
-    END
+    END SUBROUTINE 
 
 !**********************************************************************************
     SUBROUTINE halo_shape(ncore, npart, x, y, z, mass, eigenvalues)
@@ -467,5 +467,57 @@ contains
 
     END SUBROUTINE
 
+
+
+
+    SUBROUTINE brute_force_binding_energy(ncores, ntotal, &
+                    total_mass, total_x, total_y, total_z, &
+                    ntest, test_x, test_y, test_z, binding_energy)
+    use omp_lib
+    implicit none
+
+    !input
+    integer, intent(in) :: ntotal, ntest, ncores
+    real, dimension(ntotal), intent(in) :: total_mass, total_x, total_y, total_z
+    real, dimension(ntest), intent(in) :: test_x, test_y, test_z
+
+    !local
+    integer :: ip, ip2
+    real :: r
+
+    !output
+    real, dimension(ntest), intent(out) :: binding_energy
+
+    !!!!!!!!! FORTRAN / PYTHON WRAPPER
+    !f2py intent(in) :: ncores, ntotal, total_mass, total_x, total_y, total_z, ntest, test_x, test_y, test_z
+    !f2py intent(out) :: binding_energy
+    !f2py depend(ntotal) :: total_mass, total_x, total_y, total_z
+    !f2py depend(ntest) :: test_x, test_y, test_z
+
+    call OMP_SET_NUM_THREADS(ncores)
+
+    binding_energy(:) = 0.
+
+    !$OMP PARALLEL SHARED(total_mass, total_x, total_y, total_z, test_x, test_y, test_z, binding_energy) &
+    !$OMP          PRIVATE(ip, ip2, r)
+    !$OMP DO REDUCTION(+:binding_energy)
+    do ip=1,ntest
+    do ip2=1,ntotal
+        if ( total_x(ip2) /= test_x(ip)) then
+        if ( total_y(ip2) /= test_y(ip)) then
+        if ( total_z(ip2) /= test_z(ip)) then
+            r = sqrt( (total_x(ip2)-test_x(ip))**2 &
+                    + (total_y(ip2)-test_y(ip))**2 &
+                    + (total_z(ip2)-test_z(ip))**2 )
+            binding_energy(ip) = binding_energy(ip) + total_mass(ip2) / r
+        endif
+        endif
+        endif
+    enddo
+    enddo
+    !$OMP END DO
+    !$OMP END PARALLEL
+
+    END SUBROUTINE
 
 END MODULE
