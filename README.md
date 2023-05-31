@@ -13,7 +13,8 @@ parallel directives.
 
 The Sérsic index fitting for the light image of each galaxy is done by means of https://github.com/astropy/photutils
 
-Just-in-time (JIT) compilation of the code and automatic parallelization is done thanks to https://numba.pydata.org/, allowing speeds comparable to Fortran or C.
-Nevertheless, heavy parts of the code (for instance the gas unbinding, which has O(N^2) complexity) are implemented in Fortran with OpenOMP directives.
+Just-in-time (JIT) compilation and automatic parallelization of the Python code is done thanks to https://numba.pydata.org/, allowing high computational speeds for less computationally expensive parts. Nevertheless, the heaviest parts (for instance the gas unbinding, which has O(N^2) complexity) are implemented in Fortran with OpenOMP directives. 
+
+Fortran is called within Python by means of F2PY: https://numpy.org/doc/stable/f2py/
 
 Tools and readers developed in https://github.com/dvallesp/masclet_framework are necessary.
