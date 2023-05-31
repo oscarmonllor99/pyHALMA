@@ -18,3 +18,15 @@ Just-in-time (JIT) compilation and automatic parallelization of the Python code 
 Fortran is called within Python by means of F2PY: https://numpy.org/doc/stable/f2py/
 
 Tools and readers developed in https://github.com/dvallesp/masclet_framework are necessary.
+
+USAGE:
+
+* CREATE/LINK NECESSARY FOLDERS:
+  simu_masclet --> directory of MASCLET simulation results
+  E-MILES --> directory of E-MILES SSP models
+  calipso_output --> where to save calipso outputs
+  halo_particles --> where to save particles indices of each halo found by the halo finder.
+ 
+* COMPILE "compile_f2py" with ./compile_f2py
+* Call ./run.sh with your desired options.
+
