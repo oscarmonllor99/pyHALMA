@@ -22,11 +22,12 @@ Tools and readers developed in https://github.com/dvallesp/masclet_framework are
 USAGE:
 
 * CREATE/LINK NECESSARY FOLDERS:
-  simu_masclet --> directory of MASCLET simulation results
-  E-MILES --> directory of E-MILES SSP models
-  calipso_output --> where to save calipso outputs
-  halo_particles --> where to save particles indices of each halo found by the halo finder.
+  - simu_masclet --> directory of MASCLET simulation results
+  - E-MILES --> directory of E-MILES SSP models
+  - calipso_output --> where to save calipso outputs
+  - halo_particles --> where to save particles indices of each halo found by the halo finder.
  
 * COMPILE "compile_f2py" with ./compile_f2py
+
 * Call ./run.sh with your desired options.
 
