@@ -1,5 +1,0 @@
-## Building the module to import from python
-f2py -m calipso_subroutines --f90flags='-O3 -mcmodel=medium -fopenmp -mieee-fp -ftree-vectorize -march=native' -lgomp -c calipso_subroutines.f90
-
-## debug
-## f2py -m calipso_subroutines --f90flags='-fcheck=all -Wall -Wextra -fbacktrace -O3 -mcmodel=medium -fopenmp -mieee-fp -ftree-vectorize -march=native' -lgomp -c calipso_subroutines.f90
