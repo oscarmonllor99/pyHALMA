@@ -38,7 +38,8 @@ contains
 
     ! FLAGS FOR THE PYTHON-FORTRAN WRAPPER
 
-    !f2py intent(in) ncores, npart, mass, age, met, wavelenghts, SSP, age_span, Z_span, nw, nZ,  nages, istart, iend, disp, lumg, tam_i, tam_j, vel, nx, ny, clight
+    !f2py intent(in) ncores, npart, mass, age, met, wavelenghts, SSP, age_span, Z_span, nw, nZ
+    !f2py intent(in) nages, istart, iend, disp, lumg, tam_i, tam_j, vel, nx, ny, clight
     !f2py intent(out) flux_cell, flux_cell_sig, fluxtot, vell_malla, sigl_malla, lum_malla, twl, Zwl, vell2_malla
 
     !f2py depend(nx, ny)  lum_malla, vell_malla, vell2_malla, sigl_malla, twl, Zwl
@@ -63,12 +64,9 @@ contains
     Zwl(:,:) = 0.
     vell2_malla(:,:) = 0.
 
-    !$OMP PARALLEL SHARED(mass, age, met, age_span, nages, Z_span, nZ, tam_i, tam_j, clight, &
-    !$OMP                 wavelenghts, SSP, lumg, disp, istart, iend, npart, vel, flux_cell, &
-    !$OMP                 flux_cell_sig, fluxtot, vell_malla, sigl_malla, lum_malla, twl, Zwl, &
-    !$OMP                 vell2_malla) &
-    !$OMP          PRIVATE(iage, imet, tam_ii, tam_jj, ip, iw, lpix, shift, waves, fluxs, lump, &
-    !$OMP                  dage, dmet, ssp2, wave2)
+    !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(iage, imet, tam_ii, tam_jj, ip, iw, &
+    !$OMP                                  lpix, shift, waves, fluxs, lump, dage, &
+    !$OMP                                  dmet, ssp2, wave2)
     !$OMP DO REDUCTION(+: fluxtot, flux_cell, flux_cell_sig, vell_malla, sigl_malla, lum_malla, &
     !$OMP                 twl, Zwl, vell2_malla)
     do ip = 1, npart
@@ -128,8 +126,7 @@ contains
 
     ! ------ Calculating velocity dispersion weightened with luminosity 
 
-    !$OMP PARALLEL SHARED(vel, lumg, mass, tam_i, tam_j, sigl_malla, vell_malla) &
-    !$OMP          PRIVATE(iage, imet, ip, lump, tam_ii, tam_jj)
+    !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(iage, imet, ip, lump, tam_ii, tam_jj)
     !$OMP DO REDUCTION(+: sigl_malla)
     do ip = 1, npart
         tam_ii = tam_i(ip)
@@ -192,6 +189,7 @@ contains
     END SUBROUTINE
 
 
+    
 
 
     SUBROUTINE mymagnitude(wfilt, rfilt, nfilt, ns, ws, fs, nv, wv, fv, sum_s, sum_v, mag)
@@ -208,9 +206,11 @@ contains
     ! output
     real :: sum_s, sum_v, mag !flux of the SSP and Vega in the filter wavelenghts and magnitude in vega system
 
+    ! interpolation of the spectra of the SSP and Vega in the filter wavelenghts
     call from_ws_to_wfilt(fs, wfilt, nfilt, ws, ns, fs_new)
     call from_ws_to_wfilt(fv, wfilt, nfilt, wv, nv, fv_new)
 
+    ! convolution with the response function of the filter
     call trapecio(f = fs_new*rfilt, x = wfilt, n = nfilt, sum = sum_s)
     call trapecio(f = fv_new*rfilt, x = wfilt, n = nfilt, sum = sum_v)
 
@@ -220,7 +220,7 @@ contains
 
 
 
-    SUBROUTINE mag_v1_0(ws, fs, ns, fmag, flux, nf, nlf, nmaxf, wf, rf, wv, fv, nv, dlum)
+    SUBROUTINE mag_v1_0(ws, fs, ns, fmag, flux, nf, nlf, nmaxf, wf, rf, wv, fv, nv, dlum, zeta)
     implicit none
     ! input
     integer :: ns, nf, nv, nmaxf
@@ -229,6 +229,7 @@ contains
     real, dimension(ns) :: ws, fs !wavelenghts and spectra of the SSP
     real, dimension(nv) :: wv, fv !wavelenghts and spectra of Vega
     real :: dlum !luminosity distance
+    real :: zeta !redshift
     real, dimension(nf) :: fmag, flux !magnitudes and fluxes of each filter
 
     ! local
@@ -238,6 +239,12 @@ contains
     ! unit conversion from lum[erg/s/A] to flux[erg/s/A/cm²] for sum_s, which is in units of  SOLAR LUMINOSITY
     cfact = 5. * log10(1.7685*1e8 * dlum ) !ESTO CONVIERTE sum_s DENTRO DE mag EN UN FLUJO (dividiendo por 4pidlum^2)
                                             !pasa dlum de MPC a CM y ademas pasa de Lo a 3.826*10^33
+    
+    !Inverse K-CORRECTION, that is, the shift of the filter wavelenghts due to the redshift of the galaxy
+    ws(:)=ws(:)*(1.+zeta)
+    fs(:)=fs(:)/(1.+zeta)
+
+    !select filter in the lambda range of the spectrum and compute mag
     ws_min = ws(1)
     ws_max = ws(ns)
 
@@ -268,7 +275,7 @@ contains
 
 
 
-    SUBROUTINE magANDfluxes(ncores, wavelenghts, nw, nf, nlf, nmaxf, wf, rf, wv, fv, nv, dlum, nx, ny, flux_cell, area_arc, &
+    SUBROUTINE magANDfluxes(ncores, wavelenghts, nw, nf, nlf, nmaxf, wf, rf, wv, fv, nv, dlum, zeta, nx, ny, flux_cell, area_arc, &
                             SBf, magf, fluxf)
     use omp_lib
     implicit none
@@ -280,6 +287,7 @@ contains
     real, dimension(nw) :: wavelenghts !wavelenghts of the SSP
     real, dimension(nv) :: wv, fv !wavelenghts and spectra of Vega
     real :: dlum, area_arc !luminosity distance and area of the pixel in arcsec^2
+    real :: zeta !redshift
     real, dimension(nx,ny,nw) :: flux_cell !fluxes of each pixel in each wavelenght
 
     ! local
@@ -290,7 +298,8 @@ contains
     real, dimension(nx,ny,nf) :: SBf, magf, fluxf !surface brightness, magnitudes and fluxes of each filter in each pixel
 
     ! FLAGS FOR THE PYTHON-FORTRAN WRAPPER
-    !f2py intent(in) ncores, wavelenghts, nw, nf, nlf, nmaxf, wf, rf, wv, fv, nv, dlum, nx, ny, flux_cell, area_arc
+    !f2py intent(in) ncores, wavelenghts, nw, nf, nlf, nmaxf, wf, rf, wv, fv, nv, 
+    !f2py intent(in) dlum, nx, ny, flux_cell, area_arc, zeta
     !f2py intent(out) SBf, magf, fluxf
 
     !f2py depend(nf) :: nlf
@@ -306,15 +315,13 @@ contains
     magf(:,:,:) = 0.
     fluxf(:,:,:) = 0.
 
-    !$OMP PARALLEL SHARED(nx, ny, wavelenghts, flux_cell, nw, nf, nlf, wf, rf, wv, nv, dlum, area_arc, &
-    !$OMP                  SBf, magf, fluxf) &
-    !$OMP          PRIVATE(tam_ii, tam_jj, fmag, flux)
+    !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(tam_ii, tam_jj, fmag, flux)
     !$OMP DO REDUCTION(+:SBf, magf, fluxf)
     do tam_jj = 1,ny
     do tam_ii = 1,nx
         fmag(:) = 0.
         flux(:) = 0.
-        call mag_v1_0(wavelenghts, flux_cell(tam_ii, tam_jj, :), nw, fmag, flux, nf, nlf, nmaxf, wf, rf, wv, fv, nv, dlum)
+        call mag_v1_0(wavelenghts, flux_cell(tam_ii, tam_jj, :), nw, fmag, flux, nf, nlf, nmaxf, wf, rf, wv, fv, nv, dlum, zeta)
         SBf(tam_ii, tam_jj, :) = fmag(:) + 2.5*log10(area_arc)
         magf(tam_ii, tam_jj, :) = fmag(:)
         fluxf(tam_ii, tam_jj, :) = flux(:)
