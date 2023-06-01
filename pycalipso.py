@@ -8,7 +8,6 @@ from math import log10
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 import calipso
-import time
 
 ### AVISOS PARA ENTENDER EL CÓDIGO:
 # mag no es una magnitud. Al sumarle cfact: fmag = mag + cfact lo convertimos en una magnitud
@@ -207,21 +206,20 @@ def mymagnitude(wfilt, rfilt, nfilt, ns, ws, fs, nv, wv, fv):
     return sum_s, sum_v, mag
 
 @njit
-def mag_v1_0(ws, fs, ns, fmag, flux, nf, nlf, wf, rf, wv, fv, nv, dlum):
+def mag_v1_0(ws, fs, ns, fmag, flux, nf, nlf, wf, rf, wv, fv, nv, dlum, zeta):
     ZP = np.zeros(nf) # para cada filtro la magnitud de vega
     mnormf = np.zeros(nf) # flujo de Vega convolucionado con el filtro
-    red=0.
 
     # unit conversion from lum[erg/s/A] to flux[erg/s/A/cm²] for sum_s, which is in units of  SOLAR LUMINOSITY
     cfact = 5. * log10(1.7685*1e8 * dlum ) # ESTO CONVIERTE sum_s DENTRO DE mag EN UN FLUJO (dividiendo por 4pidlum^2)
                                             # pasa dlum de MPC a CM y ademas pasa de Lo a 3.826*10^33
     # INVERSE K-CORRECTION -- See Hogg et al. 2002
-    ws = ws * (1.+red)
-    fs = fs / (1.+red)
+    # ws_k = ws * (1.+zeta)
+    # fs_k = fs / (1.+zeta)
 
     # select filter in the lambda range of the spectrum and compute mag
     ws_min=ws[0]
-    ws_max=ws[-1]
+    ws_max=fs[-1]
 
     for i_f in range(nf):
         if wf[0, i_f] > ws_min and wf[nlf[i_f]-1, i_f] < ws_max:
@@ -322,47 +320,6 @@ def make_light(npart, mass, age, met, wavelenghts, SSP, age_span, Z_span, nw, nZ
     return flux_cell, flux_cell_sig, fluxtot, vell_malla, sigl_malla, lum_malla, twl, Zwl, vell2_malla
 
 
-
-# FORTRAN WRAPPER
-def make_light_fortran(npart, mass, age, met, wavelenghts, SSP, age_span, Z_span, nw, nZ, nages, istart, iend, disp, lumg, 
-                        tam_i, tam_j, vel, nx, ny, clight):
-    
-    #INPUT FILES
-    npart_f90 = np.int32(npart)
-    mass_f90 = np.float32(mass) 
-    age_f90 = np.float32(age)
-    met_f90 = np.float32(met)
-    wavelenghts_f90 = np.float32(wavelenghts)
-    SSP_f90 = np.float32(SSP)
-    age_span_f90 = np.float32(age_span)
-    Z_span_f90 = np.float32(Z_span)
-    nw_f90 = np.int32(nw)
-    nZ_f90 = np.int32(nZ)
-    nages_f90 = np.int32(nages)
-    istart_f90 = np.int32(istart     +    1) #fortran starts at 1
-    iend_f90 = np.int32(iend      +    1)
-    disp_f90 = np.float32(disp)
-    lumg_f90 = np.float32(lumg)
-    tam_i_f90 = np.int32(tam_i)
-    tam_j_f90 = np.int32(tam_j)
-    vel_f90 = np.float32(vel)
-    nx_f90 = np.int32(nx)
-    ny_f90 = np.int32(ny)
-    clight_f90 = np.float32(clight)
-
-    #CALL FORTRAN MODULE
-    ncores_f90 = np.int32(get_num_threads())
-
-    (
-     flux_cell, flux_cell_sig, fluxtot, vell_malla, 
-     sigl_malla, lum_malla, twl, Zwl, vell2_malla
-     ) = calipso.calipso.make_light(ncores_f90, npart_f90, mass_f90, age_f90, met_f90, wavelenghts_f90, SSP_f90, 
-                                                age_span_f90, Z_span_f90, nw_f90, nZ_f90, nages_f90, istart_f90, iend_f90, 
-                                                disp_f90, lumg_f90, tam_i_f90, tam_j_f90, vel_f90, nx_f90, ny_f90, clight_f90)
-
-    return flux_cell, flux_cell_sig, fluxtot, vell_malla, sigl_malla, lum_malla, twl, Zwl, vell2_malla
-
-
 @njit
 def magANDfluxes(wavelenghts, nw, nf, nlf, wf, rf, wv, fv, nv, dlum, nx, ny, flux_cell, area_arc):
     SBf = np.zeros((nx, ny, nf)) #BRILLO SUPERFICIAL DE CADA CELDA EN mag/arcsec^2
@@ -378,37 +335,6 @@ def magANDfluxes(wavelenghts, nw, nf, nlf, wf, rf, wv, fv, nv, dlum, nx, ny, flu
             magf[tam_ii, tam_jj, :] = fmag[:]
     
     return SBf, magf, fluxf
-
-
-def magANDfluxes_fortran(wavelenghts, nw, nf, nlf, wf, rf, wv, fv, nv, dlum, nx, ny, flux_cell, area_arc):
-    
-    #INPUT FILES
-    wavelenghts_f90 = np.float32(wavelenghts)
-    nw_f90 = np.int32(nw)
-    nf_f90 = np.int32(nf)
-    nlf_f90 = np.int32(nlf)
-    nmaxf_f90 = np.int32(np.max(nlf))
-    wf_f90 = np.float32(wf)
-    rf_f90 = np.float32(rf)
-    wv_f90 = np.float32(wv)
-    fv_f90 = np.float32(fv)
-    nv_f90 = np.int32(nv)
-    dlum_f90 = np.float32(dlum)
-    nx_f90 = np.int32(nx)
-    ny_f90 = np.int32(ny)
-    flux_cell_f90 = np.float32(flux_cell)
-    area_arc_f90 = np.float32(area_arc)
-
-    #CALL FORTRAN MODULE
-    ncores_f90 = np.int32(get_num_threads())
-
-    SBf, magf, fluxf = calipso.calipso.magandfluxes(ncores_f90, wavelenghts_f90, nw_f90, 
-                                                                nf_f90, nlf_f90, nmaxf_f90, wf_f90, rf_f90, 
-                                                                wv_f90, fv_f90, nv_f90, dlum_f90, 
-                                                                nx_f90, ny_f90, flux_cell_f90, area_arc_f90)
-
-    return SBf, magf, fluxf
-
 
 
 #CALCULATING MEAN QUANTITIES IN EACH CELL
@@ -487,31 +413,20 @@ def main(calipso_input, star_particle_data, ncell, vel_LOS, tam_i, tam_j, effect
 
     [npart, mass, met, age] = star_particle_data
 
-
-    # Mean cell properties in each projection
-    num_cell, mass_cell, vel_malla, sig_cell, twm, tmed, Zwm, Zmed = mean_mesh2D(ncell, ncell, npart, 
-                                                                                 mass, met, age, 
-                                                                                 vel_LOS, tam_i, tam_j)
-
     # Finding fluxes in each cell and luminosity weighted quantities
-    (flux_cell, flux_cell_sig, fluxtot, vell_malla, 
-    sigl_malla, lum_malla, twl, Zwl, vell2_malla) = make_light_fortran(npart, mass, age, 
-                                                                        met, WAVELENGHTS, 
-                                                                        SSP, AGE_SPAN, Z_SPAN,
-                                                                        N_W, N_Z, N_AGES,
-                                                                        I_START, I_END, DISP, 
-                                                                        LUMG, tam_i, tam_j, 
-                                                                        vel_LOS, ncell, ncell, 
-                                                                        CLIGHT)
-
+    (
+     flux_cell, flux_cell_sig, fluxtot, vell_malla, 
+     sigl_malla, lum_malla, twl, Zwl, vell2_malla
+     ) = calipso.calipso.make_light(get_num_threads(), npart, mass, age, met, WAVELENGHTS, 
+                                    SSP, AGE_SPAN, Z_SPAN,N_W, N_Z, N_AGES,
+                                    I_START + 1, I_END + 1, DISP, LUMG, tam_i, tam_j, 
+                                    vel_LOS, ncell, ncell, CLIGHT)
     
     # Magnitudes and fluxes through filters in each cell. Images.
     # First: total quantities
-    fmag_tot = np.zeros(N_F)
-    flux_tot = np.zeros(N_F)
-    mag_v1_0(WAVELENGHTS, fluxtot, N_W, fmag_tot, flux_tot, 
-             N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, 
-             W_VEGA, FLUX_VEGA, N_VEGA, dlum) 
+    fmag_tot, flux_tot = calipso.calipso.mag_v1_0(WAVELENGHTS, fluxtot, N_W, 
+                                                N_F, N_LINES_FILTERS, np.max(N_LINES_FILTERS), W_FILTERS, RESPONSE_FILTERS, 
+                                                W_VEGA, FLUX_VEGA, N_VEGA, dlum, zeta) 
     
     lumtotu = flux_tot[0]
     lumtotg = flux_tot[1]
@@ -531,9 +446,11 @@ def main(calipso_input, star_particle_data, ncell, vel_LOS, tam_i, tam_j, effect
     ur = fmag_tot[0]-fmag_tot[2] # color u-r
 
     #Second: same quantities but for each cell and "visibility"
-    sbf, magf, fluxf = magANDfluxes_fortran(WAVELENGHTS, N_W, N_F, N_LINES_FILTERS,
-                                            W_FILTERS, RESPONSE_FILTERS, W_VEGA, FLUX_VEGA, N_VEGA,
-                                            dlum, ncell, ncell, flux_cell, area_arc)
+
+    sbf, magf, fluxf = calipso.calipso.magandfluxes(get_num_threads(), WAVELENGHTS, N_W, N_F, 
+                                                    N_LINES_FILTERS, np.max(N_LINES_FILTERS),
+                                                    W_FILTERS, RESPONSE_FILTERS, W_VEGA, FLUX_VEGA, N_VEGA,
+                                                    dlum, zeta, ncell, ncell, flux_cell, area_arc)
 
     sbf[fluxf==0.] = np.nan # if flux is zero, magnitudes are undefined
     magf[fluxf==0.] = np.nan

@@ -158,7 +158,7 @@ contains
     real, dimension(n) :: f, x
     sum = 0.
     do ix = 1,n-1
-        sum = sum + (x(ix+1) - x(ix))*(f(ix+1) + f(ix))
+        sum = sum + (x(ix+1) - x(ix))*(f(ix+1) + f(ix))/2
     enddo
     END SUBROUTINE
 
@@ -215,6 +215,7 @@ contains
     call trapecio(f = fv_new*rfilt, x = wfilt, n = nfilt, sum = sum_v)
 
     mag = -2.5*log10(sum_s/sum_v)
+
     END SUBROUTINE
 
 
@@ -230,19 +231,30 @@ contains
     real, dimension(nv) :: wv, fv !wavelenghts and spectra of Vega
     real :: dlum !luminosity distance
     real :: zeta !redshift
+
+    ! output
     real, dimension(nf) :: fmag, flux !magnitudes and fluxes of each filter
 
     ! local
     real :: cfact, ws_min, ws_max, sum_s, sum_v, mag
     integer :: i_f
+    real, dimension(ns) :: ws_k, fs_k !inverse k-correction
     
-    ! unit conversion from lum[erg/s/A] to flux[erg/s/A/cm²] for sum_s, which is in units of  SOLAR LUMINOSITY
+    !f2py intent(in) ws, fs, ns, nf, nlf, nmaxf, wf, rf, wv, fv, nv, dlum, zeta
+    !f2py intent(out) fmag, flux
+
+    !f2py depend(nf) nlf, fmag, flux
+    !f2py depend(ns) ws, fs
+    !f2py depend(nmaxf, nf) wf, rf
+    !f2py depend(nv) wv, fv
+
+    ! unit conversion from lum[erg/s] to flux[erg/s/cm²] for sum_s, which is in units of  SOLAR LUMINOSITY
     cfact = 5. * log10(1.7685*1e8 * dlum ) !ESTO CONVIERTE sum_s DENTRO DE mag EN UN FLUJO (dividiendo por 4pidlum^2)
                                             !pasa dlum de MPC a CM y ademas pasa de Lo a 3.826*10^33
     
     !Inverse K-CORRECTION, that is, the shift of the filter wavelenghts due to the redshift of the galaxy
-    ws(:)=ws(:)*(1.+zeta)
-    fs(:)=fs(:)/(1.+zeta)
+    ! ws_k(:)=ws(:)*(1.+zeta)
+    ! fs_k(:)=fs(:)/(1.+zeta)
 
     !select filter in the lambda range of the spectrum and compute mag
     ws_min = ws(1)
@@ -257,7 +269,7 @@ contains
                             sum_s, sum_v, mag)
             fmag(i_f) = mag + cfact
             flux(i_f) = sum_s
-
+            
             ! from VEGA to AB
             if (i_f == 1) then
                 fmag(i_f) = fmag(i_f) + 0.91 

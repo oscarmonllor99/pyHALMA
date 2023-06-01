@@ -7,7 +7,6 @@ from tqdm import tqdm
 from math import sqrt, log10, acos
 import matplotlib.pyplot as plt
 from scipy.interpolate import RegularGridInterpolator
-import time
 #Our things
 sys.path.append('/home/monllor/projects/')
 from masclet_framework import read_masclet, units, tools
@@ -249,7 +248,7 @@ if CALIPSO_FLAG:
     for iage in range(N_AGES):
         for iZ in range(N_Z):
             pycalipso.mag_v1_0(WAVELENGHTS, SSP[iage, iZ, :], N_W, magssp[iage, iZ, :],
-                                fluxssp[iage, iZ, :], N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, W_VEGA, FLUX_VEGA, N_VEGA, dlum)
+                                fluxssp[iage, iZ, :], N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, W_VEGA, FLUX_VEGA, N_VEGA, dlum, zeta=0.0)
             
             LUMU[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 0]-USUN)) #luminosity in u filter (U band more or less)
             LUMG[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 1]-GSUN)) #luminosity in g filter (B band more or less)
