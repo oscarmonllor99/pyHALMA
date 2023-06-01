@@ -190,11 +190,24 @@ def brute_force_binding_energy_fortran(total_mass, total_x, total_y, total_z, te
     # call the fortran routine
     ncores_f90 = np.int32(get_num_threads())
 
+    t0 = time.time()
     binding_energy = particle.particle.brute_force_binding_energy(ncores_f90, ntotal_f90, 
                                                                   total_mass_f90, total_x_f90, 
                                                                   total_y_f90, total_z_f90,
                                                                   ntest_f90, test_x_f90, 
                                                                   test_y_f90, test_z_f90)
+    t1 = time.time()
+    # print('CPU', t1-t0, 's')
+
+    # binding_energy = particle.particle.gpu_brute_force_binding_energy(ntotal_f90,
+    #                                                                 total_mass_f90, total_x_f90,
+    #                                                                 total_y_f90, total_z_f90,
+    #                                                                 ntest_f90, test_x_f90,
+    #                                                                 test_y_f90, test_z_f90)
+    # t2 = time.time()
+    # print('GPU', t2-t1, 's')
+
+
     return binding_energy
 
 
