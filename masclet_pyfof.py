@@ -777,6 +777,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                               AGE_SPAN, Z_SPAN, MH_SPAN,N_AGES, N_Z, N_W,
                               N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, 
                               W_VEGA, FLUX_VEGA, N_VEGA,
+                              USUN, GSUN, RSUN, ISUN,
                               I_START, I_END, DISP, LUMG,
                               zeta, dlum, arcsec2kpc, area_arc ]
 

@@ -164,34 +164,36 @@ contains
 
 
 
-
-
     SUBROUTINE from_ws_to_wfilt(fs, wfilt, nfilt, ws, ns, fs_new)
     implicit none
     ! input
     integer :: nfilt, ns
     real, dimension(nfilt) :: wfilt !wavelenghts of the filters
     real, dimension(ns) :: ws, fs !wavelenghts and spectra of the SSP
-
+    
     ! local
-    integer :: i_s, i_w
+    integer :: i_f, i_w
 
     ! output
     real, dimension(nfilt) :: fs_new !spectra of the SSP in the filter wavelenghts
     
     fs_new(:) = 0.
-    do i_s = 1,ns
-        if ( wfilt(1) <= ws(i_s) .and. ws(i_s) <= wfilt(nfilt) ) then
-            i_w = minloc(array = abs(wfilt - ws(i_s)), dim = 1)
-            fs_new(i_w) = fs(i_s)
+    do i_f = 1,nfilt
+        !find between which wavelenghts of the SSP is the filter wavelength
+        i_w = minloc(abs(ws - wfilt(i_f)), dim = 1)
+        !linear interpolation with the two closest wavelenghts of the SSP
+        if (ws(i_w) < wfilt(i_f)) then
+            fs_new(i_f) = fs(i_w) + (fs(i_w+1) - fs(i_w)) * &
+                          (wfilt(i_f) - ws(i_w))/(ws(i_w+1) - ws(i_w))
+        else
+            fs_new(i_f) = fs(i_w-1) + (fs(i_w) - fs(i_w-1)) * &
+                          (wfilt(i_f) - ws(i_w-1))/(ws(i_w) - ws(i_w-1))
         endif
     enddo
     END SUBROUTINE
 
 
     
-
-
     SUBROUTINE mymagnitude(wfilt, rfilt, nfilt, ns, ws, fs, nv, wv, fv, sum_s, sum_v, mag)
     implicit none
     ! input
@@ -270,7 +272,7 @@ contains
             fmag(i_f) = mag + cfact
             flux(i_f) = sum_s
             
-            ! from VEGA to AB
+            ! from VEGA to AB: https://www.astronomy.ohio-state.edu/martini.10/usefuldata.html
             if (i_f == 1) then
                 fmag(i_f) = fmag(i_f) + 0.91 
             else if (i_f == 2) then

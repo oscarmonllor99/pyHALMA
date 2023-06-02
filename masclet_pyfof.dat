@@ -35,10 +35,10 @@ Surface Brightness threshold (mag/arcsec^2) ----------------------------->
 25.
 Speed of light (km/s) --------------------------------------------------->
 299792.458
-Sun magnitude in SDSS filters (u, g, r, i) ------------------------------>
+Sun magnitude in SDSS filters (u, g, r, i) , AB magnitude---------------->
 6.55,5.12,4.68,4.57
 Sun metallicity --------------------------------------------------------->
 0.019
 Spectral range in which calculations are done (A) ----------------------->
-2800,9000
+1000,10000
 

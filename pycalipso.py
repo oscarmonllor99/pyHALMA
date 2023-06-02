@@ -121,8 +121,8 @@ def readFilters():
             rf[line, i_f] = filter_response[1]
         filters_file.close()
     #normalize response in case the maximum is not 1
-    rmax=np.max(rf)
-    rf/=rmax
+    # rmax=np.max(rf)
+    # rf/=rmax
     print('2 -----> done')
     return nf, nlf, wf, rf
 
@@ -167,13 +167,17 @@ def readVega(zp_5556):
 # MAGNITUDE CALCULATION FUNCTIONS, NOW IMPLEMENTED IN FORTRAN
 ##################################################################################################
 @njit
-def from_ws_to_wfilt(fs, wfilt, nfilt, ws, ns):
+def from_ws_to_wfilt(fs, wfilt, nfilt, ws):
     fs_new = np.zeros(nfilt)
-    for i_s in range(ns):
-        if np.min(wfilt) <= ws[i_s] <= np.max(wfilt):
-            closest = np.abs(wfilt/ws[i_s] - 1)
-            i_w = np.argmin(closest) #índice de wfilt más cercano a ws[i_s]
-            fs_new[i_w] = fs[i_s]
+    for i_f in range(nfilt):
+        i_w = np.argmin(np.abs(ws - wfilt[i_f]))
+        #linaer interpolation
+        if ws[i_w] < wfilt[i_f]:
+            fs_new[i_f] = ( fs[i_w] + (fs[i_w+1] - fs[i_w]) * 
+                            (wfilt[i_f] - ws[i_w])/(ws[i_w+1] - ws[i_w]) )
+        else:
+            fs_new[i_f] = ( fs[i_w-1] + (fs[i_w] - fs[i_w-1]) * 
+                            (wfilt[i_f] - ws[i_w-1])/(ws[i_w] - ws[i_w-1]) )
 
     return fs_new
 
@@ -196,8 +200,8 @@ def mymagnitude(wfilt, rfilt, nfilt, ns, ws, fs, nv, wv, fv):
     #IN THIS CODE I USE trapezoidal rule but first I need to adapt (indices) ws and fs to wfilt
     wfilt = wfilt[:nfilt]
     rfilt = rfilt[:nfilt]
-    fs_new = from_ws_to_wfilt(fs, wfilt, nfilt, ws, ns)
-    fv_new = from_ws_to_wfilt(fv, wfilt, nfilt, wv, nv)
+    fs_new = from_ws_to_wfilt(fs, wfilt, nfilt, ws)
+    fv_new = from_ws_to_wfilt(fv, wfilt, nfilt, wv)
 
     #CONVOLUCIONAMOS Y APLICAMOS LA REGLA DEL TRAPECIO PARA INTEGRAR
     sum_s = trapecio(rfilt*fs_new, wfilt) #LUMINOSIDAD TOTAL EN ESTE FILTRO DE LA ESTRELLA
@@ -408,6 +412,7 @@ def main(calipso_input, star_particle_data, ncell, vel_LOS, tam_i, tam_j, effect
      AGE_SPAN, Z_SPAN, MH_SPAN, N_AGES, N_Z, N_W, 
      N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, 
      W_VEGA, FLUX_VEGA, N_VEGA, 
+     USUN, GSUN, RSUN, ISUN,
      I_START, I_END, DISP, LUMG, 
      zeta, dlum, arcsec2kpc, area_arc] = calipso_input
 
@@ -441,6 +446,11 @@ def main(calipso_input, star_particle_data, ncell, vel_LOS, tam_i, tam_j, effect
     sb_g_tot = fmag_tot[1]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 g filter
     sb_r_tot = fmag_tot[2]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 r filter
     sb_i_tot = fmag_tot[3]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 i filter
+
+    # sb_u_tot -2.5*log10(flux_tot[0]/(4*np.pi*(dlum*1e6)**2)) + USUN + 21.572
+    # sb_g_tot -2.5*log10(flux_tot[1]/(4*np.pi*(dlum*1e6)**2)) + GSUN + 21.572
+    # sb_r_tot -2.5*log10(flux_tot[2]/(4*np.pi*(dlum*1e6)**2)) + RSUN + 21.572
+    # sb_i_tot -2.5*log10(flux_tot[3]/(4*np.pi*(dlum*1e6)**2)) + ISUN + 21.572
 
     gr = fmag_tot[1]-fmag_tot[2] # color g-r
     ur = fmag_tot[0]-fmag_tot[2] # color u-r
