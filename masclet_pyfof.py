@@ -134,13 +134,14 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
         first_strings = ['Halo','n','Mass','Mass','Mass','frac', 'm_rps','m_rps','m_SFR', 
                          ' R ','R_05','R_05','R_05','R_05','R_05', 'sigma','sigma','sig_x',
                          'sig_y','sig_z','j', 'c_x','c_y','c_z', 'V_x','V_y','V_z','Pro.','Pro.',
-                         'n','type', 'age','age', 'Z','Z', 'V/Sigma', 'lambda', 'v_TF', 'a', 'b', 'c', 'sersic',
+                         'n','type', 'age','age', 'Z','Z', 'V/Sigma', 'lambda', 'k_co', 'v_TF', 'a', 'b', 'c', 'sersic',
                          'lum_u','lum_g','lum_r','lum_i','sb_u','sb_g','sb_r','sb_i','ur_color','gr_color','sersic_lum']
         
         second_strings = ['ID',' part', ' * ','*_vis','gas','g_cold',  'cold','hot','  * ', 'max','3D',
                         '1D','1D_x','1D_y','1D_z', '05_3D','05_1D','05_1D','05_1D','05_1D',
                         '  ', 'kpc','kpc','kpc', 'km/s','km/s','km/s',
-                        '(1)','(2)','merg','merg','m_weig','mean', 'm_weig','mean', '  ', '  ', 'km/s', 'kpc', 'kpc', 'kpc', '  ',
+                        '(1)','(2)','merg','merg','m_weig','mean', 'm_weig','mean', '  ', '  ', '  ', 
+                        'km/s', 'kpc', 'kpc', 'kpc', '  ',
                         '  ','  ','  ','  ','  ','  ','  ','  ','  ','  ','  ']
 
         first_line = f'{first_strings[0]:6s}{first_strings[1]:10s}{first_strings[2]:15s}{first_strings[3]:15s}\
@@ -151,7 +152,7 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
 {first_strings[27]:6s}{first_strings[28]:6s}{first_strings[29]:6s}{first_strings[30]:6s}{first_strings[31]:9s}{first_strings[32]:9s}\
 {first_strings[33]:11s}{first_strings[34]:11s}{first_strings[35]:11s}{first_strings[36]:11s}{first_strings[37]:11s}{first_strings[38]:11s}{first_strings[39]:11s}\
 {first_strings[40]:11s}{first_strings[41]:11s}{first_strings[42]:11s}{first_strings[43]:11s}{first_strings[44]:11s}{first_strings[45]:11s}{first_strings[46]:11s}\
-{first_strings[47]:11s}{first_strings[48]:11s}{first_strings[49]:11s}{first_strings[50]:11s}{first_strings[51]:11s}{first_strings[52]:11s}'
+{first_strings[47]:11s}{first_strings[48]:11s}{first_strings[49]:11s}{first_strings[50]:11s}{first_strings[51]:11s}{first_strings[52]:11s}{second_strings[53]:11s}'
         
         second_line = f'{second_strings[0]:6s}{second_strings[1]:10s}{second_strings[2]:15s}{second_strings[3]:15s}\
 {second_strings[4]:15s}{second_strings[5]:8s}{second_strings[6]:15s}{second_strings[7]:15s}{second_strings[8]:15s}\
@@ -161,7 +162,7 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
 {second_strings[27]:6s}{second_strings[28]:6s}{second_strings[29]:6s}{second_strings[30]:6s}{second_strings[31]:9s}{second_strings[32]:9s}\
 {second_strings[33]:11s}{second_strings[34]:11s}{second_strings[35]:11s}{second_strings[36]:11s}{second_strings[37]:11s}{second_strings[38]:11s}{second_strings[39]:11s}\
 {second_strings[40]:11s}{second_strings[41]:11s}{second_strings[42]:11s}{second_strings[43]:11s}{second_strings[44]:11s}{second_strings[45]:11s}{second_strings[46]:11s}\
-{second_strings[47]:11s}{second_strings[48]:11s}{second_strings[49]:11s}{second_strings[50]:11s}{second_strings[51]:11s}{second_strings[52]:11s}'
+{second_strings[47]:11s}{second_strings[48]:11s}{second_strings[49]:11s}{second_strings[50]:11s}{second_strings[51]:11s}{second_strings[52]:11s}{second_strings[53]:11s}'
         
         catalogue.write('\n')
         catalogue.write('------------------------------------------------------------------------------------------------------------')
@@ -194,10 +195,10 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
 {ih_values[24]:10.2f}{gap}{ih_values[25]:10.2f}{gap}{ih_values[26]:10.2f}{gap}\
 {ih_values[27]:6d}{gap}{ih_values[28]:6d}{gap}{ih_values[29]:6d}{gap}{ih_values[30]:6d}{gap}\
 {ih_values[31]:9.3f}{gap}{ih_values[32]:9.3f}{gap}{ih_values[33]:11.3e}{gap}{ih_values[34]:11.3e}{gap}\
-{ih_values[35]:11.2f}{gap}{ih_values[36]:11.2f}{gap}{ih_values[37]:11.2f}{gap}{ih_values[38]:11.2f}{gap}{ih_values[39]:11.2f}{gap}\
-{ih_values[40]:11.2f}{gap}{gap}{ih_values[41]:11.2f}{gap}{ih_values[42]:11.2e}{gap}{ih_values[43]:11.2e}{gap}{ih_values[44]:11.2e}{gap}\
-{ih_values[45]:11.2e}{gap}{ih_values[46]:11.2f}{ih_values[47]:11.2f}{ih_values[48]:11.2f}{ih_values[49]:11.2f}{ih_values[50]:11.2f}\
-{ih_values[51]:11.2f}{ih_values[52]:11.2f}'
+{ih_values[35]:11.2f}{gap}{ih_values[36]:11.2f}{gap}{ih_values[37]:11.2f}{gap}{ih_values[38]:11.2f}{gap}{ih_values[39]:11.2f}{gap}{ih_values[40]:11.2f}{gap}\
+{ih_values[41]:11.2f}{gap}{gap}{ih_values[42]:11.2f}{gap}{ih_values[43]:11.2e}{gap}{ih_values[44]:11.2e}{gap}{ih_values[45]:11.2e}{gap}\
+{ih_values[46]:11.2e}{gap}{ih_values[47]:11.2f}{ih_values[48]:11.2f}{ih_values[49]:11.2f}{ih_values[50]:11.2f}{ih_values[51]:11.2f}\
+{ih_values[52]:11.2f}{ih_values[53]:11.2f}'
             
             catalogue.write(catalogue_line)
             catalogue.write('\n')
@@ -488,6 +489,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         metallicities = np.zeros(num_halos)
         metallicities_mass = np.zeros(num_halos)
         vsigma = np.zeros(num_halos)
+        kinematic_morphologies = np.zeros(num_halos)
         lambda_ensellem = np.zeros(num_halos)
         tully_fisher_velocities = np.zeros(num_halos)
         s_axis_major = np.zeros(num_halos)
@@ -519,6 +521,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             (rad05_x[ihal], 
              rad05_y[ihal], 
              rad05_z[ihal]) = halo_properties.half_mass_radius_proj(cx, cy, cz, mass, part_list, st_x, st_y, st_z, st_mass)
+            
             #BULK VELOCITY
             (velocities_x[ihal], 
              velocities_y[ihal], 
@@ -537,6 +540,12 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             specific_angular_momentum[ihal] = ( specific_angular_momentum_x[ihal]**2 + 
                                                 specific_angular_momentum_y[ihal]**2 + 
                                                 specific_angular_momentum_z[ihal]**2 )**0.5
+            
+            #KINEMATIC MORPHOLOGY
+            kinematic_morphologies[ihal] = halo_properties.kinematic_morphology(part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, 
+                                                                                cx, cy, cz, velocities_x[ihal], velocities_y[ihal], velocities_z[ihal], 
+                                                                                specific_angular_momentum_x[ihal], specific_angular_momentum_y[ihal], 
+                                                                                specific_angular_momentum_z[ihal])
             
             #SHAPE
             (s_axis_major[ihal], 
@@ -681,6 +690,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         metallicities_mass = metallicities_mass[argsort_part]
         vsigma = vsigma[argsort_part]
         lambda_ensellem = lambda_ensellem[argsort_part]
+        kinematic_morphologies = kinematic_morphologies[argsort_part]
         tully_fisher_velocities = tully_fisher_velocities[argsort_part]
         s_axis_major = s_axis_major[argsort_part]
         s_axis_intermediate = s_axis_intermediate[argsort_part]
@@ -1110,6 +1120,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         #NEW ADDED
         halo['Vsigma'] = vsigma[ih]
         halo['lambda'] = lambda_ensellem[ih]
+        halo['kin_morph'] = kinematic_morphologies[ih]
         halo['v_TF'] = tully_fisher_velocities[ih]
         halo['a'] = s_axis_major[ih]*rete*1e3
         halo['b'] = s_axis_intermediate[ih]*rete*1e3
@@ -1120,10 +1131,10 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         halo['lum_g'] = lum_g[ih]
         halo['lum_r'] = lum_r[ih]
         halo['lum_i'] = lum_i[ih]
-        halo['sb_u'] = central_u[ih]
-        halo['sb_g'] = central_g[ih]
-        halo['sb_r'] = central_r[ih]
-        halo['sb_i'] = central_i[ih]
+        halo['sb_u'] = sb_u[ih]
+        halo['sb_g'] = sb_g[ih]
+        halo['sb_r'] = sb_r[ih]
+        halo['sb_i'] = sb_i[ih]
         halo['ur_color'] = ur_color[ih]
         halo['gr_color'] = gr_color[ih]
         halo['sersic_lum'] = sersic_index_lum[ih]

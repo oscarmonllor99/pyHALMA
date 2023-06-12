@@ -452,6 +452,41 @@ def angular_momentum(M, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mas
 
     return lx/M, ly/M, lz/M
 
+
+@njit(parallel = True)
+def kinematic_morphology(part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, cx, cy, cz, vx, vy, vz, lx, ly, lz):
+    # Reference: Correa et al. 2017
+    # The relation between galaxy morphology and colour in the EAGLE simulation
+    # doi:10.1093/mnrasl/slx133
+    npart = len(part_list)
+    kin_corot = 0. # co-rotation only
+    kin_total = 0. # total
+    L_gal = np.array([lx, ly, lz]) # Angular momentum vector
+    L_gal = L_gal/np.linalg.norm(L_gal) # Unitary vector
+    for ip in prange(npart):
+        ipp = part_list[ip]
+        vvx = st_vx[ipp] - vx # Velocity of the particle relative to the galaxy
+        vvy = st_vy[ipp] - vy
+        vvz = st_vz[ipp] - vz
+        rx = st_x[ipp] - cx # Position of the particle relative to the galaxy
+        ry = st_y[ipp] - cy
+        rz = st_z[ipp] - cz
+        llx = st_mass[ipp]*(ry*vvz - rz*vvy) # Angular momentum of the particle relative to the galaxy
+        lly = st_mass[ipp]*(rz*vvx - rx*vvz)
+        llz = st_mass[ipp]*(rx*vvy - ry*vvx)
+
+        L_ip = np.array([llx, lly, llz]) # Angular momentum vector of the particle relative to the galaxy
+        Lz_ip = np.dot(L_ip, L_gal) # Angular momentum of the particle in the direction of the angular momentum of the galaxy
+        z_ip = np.dot(np.array([rx, ry, rz]), L_gal) # Position of the particle in the direction of the angular momentum of the galaxy
+        R_ip = np.sqrt(rx**2 + ry**2 + rz**2 - z_ip**2) # Position of the particle in the plane perpendicular to the angular momentum of the galaxy
+
+        kin_total += 0.5*st_mass[ipp]*(vvx**2 + vvy**2 + vvz**2)
+        if Lz_ip > 0.: # if the particle is co-rotating
+            kin_corot += 0.5 * st_mass[ipp] * ( Lz_ip/(st_mass[ipp]*R_ip) )**2
+
+    return kin_corot/kin_total
+
+
 @njit
 def density_peak(part_list, st_x, st_y, st_z, st_mass, ll):
     N_cells = 50
