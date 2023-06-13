@@ -70,8 +70,8 @@ def photutils_fit(R05, R_fit_min, R_fit_max, res, flux_2D):
             eps = ellipticity_list[np.argmin(np.abs(sma_list - sma))]
 
             # CHECK FIT
-            # plt.plot(sma_list_xy, intens_list_xy, 'o')
-            # plt.plot(sma_list_xy, sersic(sma_list_xy, param_xy[0], param_xy[1], param_xy[2]))
+            # plt.plot(sma_list, intens_list, 'o')
+            # plt.plot(sma_list, sersic(sma_list, param[0], param[1], param[2]))
             # plt.show()
 
         else:
@@ -81,7 +81,6 @@ def photutils_fit(R05, R_fit_min, R_fit_max, res, flux_2D):
     except:
         n = np.nan
         eps = np.nan
-
 
     return n, eps
 

@@ -125,6 +125,7 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
         catalogue.write('===========================================================================================================')
         catalogue.write('===========================================================================================================')
         catalogue.write('===========================================================================================================')
+        catalogue.write('===========================================================================================================')
         catalogue.write('\n')
         it_values = [*total_iteration_data[it_halma].values()]
         for value in it_values:
@@ -152,7 +153,7 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
 {first_strings[27]:6s}{first_strings[28]:6s}{first_strings[29]:6s}{first_strings[30]:6s}{first_strings[31]:9s}{first_strings[32]:9s}\
 {first_strings[33]:11s}{first_strings[34]:11s}{first_strings[35]:11s}{first_strings[36]:11s}{first_strings[37]:11s}{first_strings[38]:11s}{first_strings[39]:11s}\
 {first_strings[40]:11s}{first_strings[41]:11s}{first_strings[42]:11s}{first_strings[43]:11s}{first_strings[44]:11s}{first_strings[45]:11s}{first_strings[46]:11s}\
-{first_strings[47]:11s}{first_strings[48]:11s}{first_strings[49]:11s}{first_strings[50]:11s}{first_strings[51]:11s}{first_strings[52]:11s}{second_strings[53]:11s}'
+{first_strings[47]:11s}{first_strings[48]:11s}{first_strings[49]:11s}{first_strings[50]:11s}{first_strings[51]:11s}{first_strings[52]:11s}{first_strings[53]:11s}'
         
         second_line = f'{second_strings[0]:6s}{second_strings[1]:10s}{second_strings[2]:15s}{second_strings[3]:15s}\
 {second_strings[4]:15s}{second_strings[5]:8s}{second_strings[6]:15s}{second_strings[7]:15s}{second_strings[8]:15s}\
@@ -164,7 +165,10 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
 {second_strings[40]:11s}{second_strings[41]:11s}{second_strings[42]:11s}{second_strings[43]:11s}{second_strings[44]:11s}{second_strings[45]:11s}{second_strings[46]:11s}\
 {second_strings[47]:11s}{second_strings[48]:11s}{second_strings[49]:11s}{second_strings[50]:11s}{second_strings[51]:11s}{second_strings[52]:11s}{second_strings[53]:11s}'
         
+
+
         catalogue.write('\n')
+        catalogue.write('------------------------------------------------------------------------------------------------------------')
         catalogue.write('------------------------------------------------------------------------------------------------------------')
         catalogue.write('------------------------------------------------------------------------------------------------------------')
         catalogue.write('------------------------------------------------------------------------------------------------------------')
@@ -175,6 +179,7 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
         catalogue.write('\n')
         catalogue.write('      '+second_line)
         catalogue.write('\n')
+        catalogue.write('------------------------------------------------------------------------------------------------------------')
         catalogue.write('------------------------------------------------------------------------------------------------------------')
         catalogue.write('------------------------------------------------------------------------------------------------------------')
         catalogue.write('------------------------------------------------------------------------------------------------------------')
@@ -195,9 +200,11 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
 {ih_values[24]:10.2f}{gap}{ih_values[25]:10.2f}{gap}{ih_values[26]:10.2f}{gap}\
 {ih_values[27]:6d}{gap}{ih_values[28]:6d}{gap}{ih_values[29]:6d}{gap}{ih_values[30]:6d}{gap}\
 {ih_values[31]:9.3f}{gap}{ih_values[32]:9.3f}{gap}{ih_values[33]:11.3e}{gap}{ih_values[34]:11.3e}{gap}\
-{ih_values[35]:11.2f}{gap}{ih_values[36]:11.2f}{gap}{ih_values[37]:11.2f}{gap}{ih_values[38]:11.2f}{gap}{ih_values[39]:11.2f}{gap}{ih_values[40]:11.2f}{gap}\
-{ih_values[41]:11.2f}{gap}{gap}{ih_values[42]:11.2f}{gap}{ih_values[43]:11.2e}{gap}{ih_values[44]:11.2e}{gap}{ih_values[45]:11.2e}{gap}\
-{ih_values[46]:11.2e}{gap}{ih_values[47]:11.2f}{ih_values[48]:11.2f}{ih_values[49]:11.2f}{ih_values[50]:11.2f}{ih_values[51]:11.2f}\
+{ih_values[35]:11.2f}{gap}{ih_values[36]:11.2f}{gap}{ih_values[37]:11.2f}{gap}\
+{ih_values[38]:11.2f}{gap}{ih_values[39]:11.2f}{gap}{ih_values[40]:11.2f}{gap}\
+{ih_values[41]:11.2f}{gap}{gap}{ih_values[42]:11.2f}{gap}{ih_values[43]:11.2e}{gap}\
+{ih_values[44]:11.2e}{gap}{ih_values[45]:11.2e}{gap}{ih_values[46]:11.2e}{gap}{ih_values[47]:11.2f}\
+{ih_values[48]:11.2f}{ih_values[49]:11.2f}{ih_values[50]:11.2f}{ih_values[51]:11.2f}\
 {ih_values[52]:11.2f}{ih_values[53]:11.2f}'
             
             catalogue.write(catalogue_line)
@@ -847,6 +854,9 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 tam_j = which_cell_y
                 vel_LOS = velz
                 effective_radius = rad05_z[ihal]*1e3
+                R_fit_min = 0.3*effective_radius
+                R_fit_max = 2*effective_radius
+
 
                 (   fluxtot,
                     lumtotu, lumtotg, lumtotr, lumtoti, 
@@ -863,7 +873,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 flux_interpolated = flux_interp((x_meshgrid_interp, y_meshgrid_interp))
 
                 # COMPARE INTERPOLATED FLUX WITH THE ORIGINAL ONE
-                n, eps = galaxy_image_fit.photutils_fit(effective_radius, 0., 2*effective_radius, res_interp, flux_2D = flux_interpolated)
+                n, eps = galaxy_image_fit.photutils_fit(effective_radius, R_fit_min, R_fit_max, res_interp, flux_2D = flux_interpolated)
 
                 # SAVE DATA
                 # FIRST, THE CATALOGUE
@@ -911,6 +921,8 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 tam_j = which_cell_z
                 vel_LOS = vely
                 effective_radius = rad05_y[ihal]*1e3
+                R_fit_min = 0.3*effective_radius
+                R_fit_max = 2*effective_radius
 
                 (   fluxtot,
                     lumtotu, lumtotg, lumtotr, lumtoti,
@@ -927,7 +939,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 flux_interpolated = flux_interp((x_meshgrid_interp, y_meshgrid_interp))
 
                 # COMPARE INTERPOLATED FLUX WITH THE ORIGINAL ONE
-                n, eps = galaxy_image_fit.photutils_fit(effective_radius, 0., 2*effective_radius, res_interp, flux_2D = flux_interpolated) 
+                n, eps = galaxy_image_fit.photutils_fit(effective_radius, R_fit_min, R_fit_max, res_interp, flux_2D = flux_interpolated) 
 
                 # SAVE DATA
                 # FIRST, THE CATALOGUE
@@ -975,6 +987,8 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 tam_j = which_cell_z
                 vel_LOS = velx
                 effective_radius = rad05_x[ihal]*1e3
+                R_fit_min = 0.3*effective_radius
+                R_fit_max = 2*effective_radius
 
                 (   fluxtot,
                     lumtotu, lumtotg, lumtotr, lumtoti,
@@ -991,7 +1005,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 flux_interpolated = flux_interp((x_meshgrid_interp, y_meshgrid_interp))
 
                 # COMPARE INTERPOLATED FLUX WITH THE ORIGINAL ONE
-                n, eps = galaxy_image_fit.photutils_fit(effective_radius, 0., 2*effective_radius, res_interp, flux_2D = flux_interpolated)
+                n, eps = galaxy_image_fit.photutils_fit(effective_radius, R_fit_min, R_fit_max, res_interp, flux_2D = flux_interpolated)
 
                 # SAVE DATA
                 # FIRST, THE CATALOGUE

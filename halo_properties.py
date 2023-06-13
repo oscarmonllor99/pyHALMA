@@ -846,7 +846,7 @@ def simple_sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05):
     ### ALL DISTANCES HAVE TO BE PHYSICAL, NOT COMOVING --> MULTIPLY BY rete (SCALE FACTOR)
 
     #RADIAL LIMITS
-    R_fit_min = 0.
+    R_fit_min = 0.*R05
     R_fit_max = 2.*R05
 
     #ONLY CONSIDER PARTICLES WITHIN R_fit_min and R_fit_max
@@ -886,7 +886,7 @@ def simple_sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05):
     surface_density_xy = surface_density_xy[iRmax:]
     surface_density_xz = surface_density_xz[iRmax:]
     surface_density_yz = surface_density_yz[iRmax:]
-
+    
     #FITTING THE SERSIC PROFILE
     def sersic(R, Re, Ie, n):
         bn = 2*n - 1/3 + 4/(405*n)
