@@ -205,16 +205,36 @@ contains
     real, dimension(nfilt) :: fs_new !spectra of the SSP 
 
     ! output
-    real :: sum_s, sum_v, mag !flux of the SSP and 3631 Jy constant SED in the filter wavelenghts and magnitude in vega system
+    real :: intup, intdown, sum_s, mag !flux of the SSP and 3631 Jy constant SED in the filter wavelenghts and magnitude in vega system
 
     ! interpolation of the spectra of the SSP and Vega in the filter wavelenghts
     call from_ws_to_wfilt(fs, wfilt, nfilt, ws, ns, fs_new)
 
     ! convolution with the response function of the filter
-    call trapecio(f = wfilt*fs_new*rfilt, x = wfilt, n = nfilt, sum = sum_s)
-    call trapecio(f = 0.11*rfilt/wfilt, x = wfilt, n = nfilt, sum = sum_v)
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    ! mag_AB_bandpass = -2.5*log10(Int1/Int2). 
+
+    !!! In lambda, the integrals are:
+    ! Int1 = Integral(f_lambda * R_lambda * lambda * dlambda)
+    ! Int2 = Integral(0.11 * R_lambda / lambda * dlambda) with lambda in Amstrongs and f_lambda in erg/s/cm^2/Ams
+
+    !!! In nus, the integrals are:
+    ! Int1 = Integral(f_nu * R_nu * dlognu)
+    ! Int2 = Integral(3631[Jy] * R_nu * dlognu)
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+    call trapecio(f = fs_new*rfilt*wfilt**3, x = wfilt, n = nfilt, sum = intup)
+    call trapecio(f = rfilt*wfilt, x = wfilt, n = nfilt, sum = intdown)
     
-    mag = -2.5*log10(sum_s/sum_v)
+    mag = -2.5*log10(intup/intdown) - 2.4
+
+    !!!!! One can also use the isophotal frecuency of the bandpass and evaluate the monocromatic AB magnitude:
+    ! mag_AB_monocromatic = -2.5*log10(F_nu) - 48.6, with F_nu in erg/s/cm^2/Hz
+    !!!!! In theory, both ways of calculating the magnitude, should give the same result.
+
+    ! NOW CALCULATING THE TOTAL FLUX IN THIS BAND:
+    call trapecio(f = fs_new*rfilt, x = wfilt, n = nfilt, sum = sum_s)
+
     END SUBROUTINE
 
 
