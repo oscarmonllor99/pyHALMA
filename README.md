@@ -9,7 +9,7 @@ surface brightness in SDSS filters. On top of that, files containing the images 
 
 In order to be able to "give" light to the stellar particles, we use the E-MILES public library (available at: http://research.iac.es/proyecto/miles/pages/spectral-energy-distributions-seds/e-miles.php)
 which assumes some type of IMF, and according to metallicity, mass and age, produces a given spectral distribution. Since this part is computationally expensive, it is implemented in Fortran with OpenOMP
-parallel directives.
+parallel directives. We use the AB system for magnitudes and the SDSS passbands, as it is usual in galactic astronomy.
 
 The Sérsic index fitting for the light image of each galaxy is done by means of https://github.com/astropy/photutils
 
