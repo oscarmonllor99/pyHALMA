@@ -194,43 +194,39 @@ contains
 
 
     
-    SUBROUTINE mymagnitude(wfilt, rfilt, nfilt, ns, ws, fs, nv, wv, fv, sum_s, sum_v, mag)
+    SUBROUTINE mymagnitude(wfilt, rfilt, nfilt, ns, ws, fs, sum_s, mag)
     implicit none
     ! input
-    integer :: nfilt, ns, nv
+    integer :: nfilt, ns
     real, dimension(nfilt) :: wfilt, rfilt !wavelenghts and response functions of each filter
     real, dimension(ns) :: ws, fs !wavelenghts and spectra of the SSP
-    real, dimension(nv) :: wv, fv !wavelenghts and spectra of Vega
 
     ! local
-    real, dimension(nfilt) :: fs_new, fv_new !spectra of the SSP and Vega in the filter wavelenghts
+    real, dimension(nfilt) :: fs_new !spectra of the SSP 
 
     ! output
-    real :: sum_s, sum_v, mag !flux of the SSP and Vega in the filter wavelenghts and magnitude in vega system
+    real :: sum_s, sum_v, mag !flux of the SSP and 3631 Jy constant SED in the filter wavelenghts and magnitude in vega system
 
     ! interpolation of the spectra of the SSP and Vega in the filter wavelenghts
     call from_ws_to_wfilt(fs, wfilt, nfilt, ws, ns, fs_new)
-    call from_ws_to_wfilt(fv, wfilt, nfilt, wv, nv, fv_new)
 
     ! convolution with the response function of the filter
-    call trapecio(f = fs_new*rfilt, x = wfilt, n = nfilt, sum = sum_s)
-    call trapecio(f = fv_new*rfilt, x = wfilt, n = nfilt, sum = sum_v)
-
+    call trapecio(f = wfilt*fs_new*rfilt, x = wfilt, n = nfilt, sum = sum_s)
+    call trapecio(f = 0.11*rfilt/wfilt, x = wfilt, n = nfilt, sum = sum_v)
+    
     mag = -2.5*log10(sum_s/sum_v)
-
     END SUBROUTINE
 
 
 
 
-    SUBROUTINE mag_v1_0(ws, fs, ns, fmag, flux, nf, nlf, nmaxf, wf, rf, wv, fv, nv, dlum, zeta)
+    SUBROUTINE mag_v1_0(ws, fs, ns, fmag, flux, nf, nlf, nmaxf, wf, rf, dlum, zeta)
     implicit none
     ! input
-    integer :: ns, nf, nv, nmaxf
+    integer :: ns, nf, nmaxf
     integer, dimension(nf) :: nlf !number of lines of each filter
     real, dimension(nmaxf,nf) :: wf, rf !wavelenghts and response functions of each filter
     real, dimension(ns) :: ws, fs !wavelenghts and spectra of the SSP
-    real, dimension(nv) :: wv, fv !wavelenghts and spectra of Vega
     real :: dlum !luminosity distance
     real :: zeta !redshift
 
@@ -238,7 +234,7 @@ contains
     real, dimension(nf) :: fmag, flux !magnitudes and fluxes of each filter
 
     ! local
-    real :: cfact, ws_min, ws_max, sum_s, sum_v, mag
+    real :: cfact, ws_min, ws_max, sum_s, mag
     integer :: i_f
     real, dimension(ns) :: ws_k, fs_k !inverse k-correction
     
@@ -265,23 +261,22 @@ contains
     do i_f=1,nf
         if ( ( wf(1,i_f) > ws_min ) .and. ( wf(nlf(i_f),i_f) < ws_max ) ) then
             sum_s = 0.
-            sum_v = 0.
             mag = 0.
-            call mymagnitude(wf(:nlf(i_f), i_f), rf(:nlf(i_f), i_f), nlf(i_f), ns, ws, fs, nv, wv, fv, &
-                            sum_s, sum_v, mag)
+            call mymagnitude(wf(:nlf(i_f), i_f), rf(:nlf(i_f), i_f), nlf(i_f), ns, ws, fs, &
+                            sum_s, mag)
             fmag(i_f) = mag + cfact
             flux(i_f) = sum_s
             
             ! from VEGA to AB: https://www.astronomy.ohio-state.edu/martini.10/usefuldata.html
-            if (i_f == 1) then
-                fmag(i_f) = fmag(i_f) + 0.91 
-            else if (i_f == 2) then
-                fmag(i_f) = fmag(i_f) - 0.08
-            else if (i_f == 3) then
-                fmag(i_f) = fmag(i_f) + 0.16
-            else if (i_f == 4) then
-                fmag(i_f) = fmag(i_f) + 0.37
-            endif
+            ! if (i_f == 1) then
+            !     fmag(i_f) = fmag(i_f) + 0.91 
+            ! else if (i_f == 2) then
+            !     fmag(i_f) = fmag(i_f) - 0.08
+            ! else if (i_f == 3) then
+            !     fmag(i_f) = fmag(i_f) + 0.16
+            ! else if (i_f == 4) then
+            !     fmag(i_f) = fmag(i_f) + 0.37
+            ! endif
         endif
     enddo
     END SUBROUTINE
@@ -289,17 +284,16 @@ contains
 
 
 
-    SUBROUTINE magANDfluxes(ncores, wavelenghts, nw, nf, nlf, nmaxf, wf, rf, wv, fv, nv, dlum, zeta, nx, ny, flux_cell, area_arc, &
+    SUBROUTINE magANDfluxes(ncores, wavelenghts, nw, nf, nlf, nmaxf, wf, rf, dlum, zeta, nx, ny, flux_cell, area_arc, &
                             SBf, magf, fluxf)
     use omp_lib
     implicit none
 
     ! input
-    integer :: ncores, nw, nf, nx, ny, nv, nmaxf
+    integer :: ncores, nw, nf, nx, ny, nmaxf
     integer, dimension(nf) :: nlf !number of lines of each filter
     real, dimension(nmaxf,nf) :: wf, rf !wavelenghts and response functions of each filter
     real, dimension(nw) :: wavelenghts !wavelenghts of the SSP
-    real, dimension(nv) :: wv, fv !wavelenghts and spectra of Vega
     real :: dlum, area_arc !luminosity distance and area of the pixel in arcsec^2
     real :: zeta !redshift
     real, dimension(nx,ny,nw) :: flux_cell !fluxes of each pixel in each wavelenght
@@ -312,7 +306,7 @@ contains
     real, dimension(nx,ny,nf) :: SBf, magf, fluxf !surface brightness, magnitudes and fluxes of each filter in each pixel
 
     ! FLAGS FOR THE PYTHON-FORTRAN WRAPPER
-    !f2py intent(in) ncores, wavelenghts, nw, nf, nlf, nmaxf, wf, rf, wv, fv, nv, 
+    !f2py intent(in) ncores, wavelenghts, nw, nf, nlf, nmaxf, wf, rf
     !f2py intent(in) dlum, nx, ny, flux_cell, area_arc, zeta
     !f2py intent(out) SBf, magf, fluxf
 
@@ -335,7 +329,7 @@ contains
     do tam_ii = 1,nx
         fmag(:) = 0.
         flux(:) = 0.
-        call mag_v1_0(wavelenghts, flux_cell(tam_ii, tam_jj, :), nw, fmag, flux, nf, nlf, nmaxf, wf, rf, wv, fv, nv, dlum, zeta)
+        call mag_v1_0(wavelenghts, flux_cell(tam_ii, tam_jj, :), nw, fmag, flux, nf, nlf, nmaxf, wf, rf, dlum, zeta)
         SBf(tam_ii, tam_jj, :) = fmag(:) + 2.5*log10(area_arc)
         magf(tam_ii, tam_jj, :) = fmag(:)
         fluxf(tam_ii, tam_jj, :) = flux(:)

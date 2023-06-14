@@ -130,7 +130,7 @@ def readFilters():
 def readVega(zp_5556):
     print('3 - Reading Vega SED')
     #AB System 
-    vname = 'calipso_files/vega_ck94.sed'
+    vname = 'calipso_files/vega_bgt2014.dat'
     nv = 0 #number of lines (Wavelenghts)
     vega_file = open(vname, 'r')
     line = '0'
@@ -148,15 +148,16 @@ def readVega(zp_5556):
         vega_data = np.array(vega_file.readline().split(), dtype = float)
         wv[iv] = vega_data[0]
         fv[iv] = vega_data[1]
-
-    fv[:] = 1/(wv[:]*wv[:])
-         
+  
     #NOW INTERPOLATE LINEARLY THE VALUE FOR LAMBDA = 5556. Easy with scipy
-    lin_interp = interp1d(wv, fv, kind = 'linear')
-    f5556 = lin_interp(5556.)
-    #Scale flux to be consistent with zp_5556
-    scalef=zp_5556/f5556
-    fv=fv*scalef
+    # lin_interp = interp1d(wv, fv, kind = 'linear')
+    # f5556 = lin_interp(5556.)
+    # #Scale flux to be consistent with zp_5556
+    # scalef=zp_5556/f5556
+    # fv=fv*scalef
+
+    #fv[:] = 1/(wv[:]*wv[:])
+
     print('3 -----> done')
     return wv, fv, nv
 ##################################################################################################
@@ -189,7 +190,7 @@ def trapecio(f, x):
     return sum
 
 @njit
-def mymagnitude(wfilt, rfilt, nfilt, ns, ws, fs, nv, wv, fv):
+def mymagnitude(wfilt, rfilt, nfilt, ns, ws, fs):
     #IN ORIGINAL CODE
     #adapted from Cardiel's routine in the photometry code
     #it computes mag by convolving the spectrum (and Vega sed) with filter reposnse
@@ -201,25 +202,20 @@ def mymagnitude(wfilt, rfilt, nfilt, ns, ws, fs, nv, wv, fv):
     wfilt = wfilt[:nfilt]
     rfilt = rfilt[:nfilt]
     fs_new = from_ws_to_wfilt(fs, wfilt, nfilt, ws)
-    fv_new = from_ws_to_wfilt(fv, wfilt, nfilt, wv)
 
     #CONVOLUCIONAMOS Y APLICAMOS LA REGLA DEL TRAPECIO PARA INTEGRAR
-    sum_s = trapecio(rfilt*fs_new, wfilt) #LUMINOSIDAD TOTAL EN ESTE FILTRO DE LA ESTRELLA
-    sum_v = trapecio(rfilt*fv_new, wfilt) #FLUJO TOTAL EN ESTE FILTRO DE VEGA
-    mag = -2.5*log10(sum_s/sum_v) #notar SUM_S es luminosidad y SUM_V es flujo, esto aún no es una magnitud aparente, hasta que no se le sume cfact, que convierte sum_s a flujo a una distancia DLUM
-    return sum_s, sum_v, mag
+    sum_s = trapecio(wfilt*fs_new*rfilt, wfilt) 
+    sum_v = trapecio(0.11*rfilt/wfilt, wfilt) 
+    mag = -2.5*log10(sum_s/sum_v) 
+    #notar SUM_S es luminosidad y SUM_V es flujo, esto aún no es una magnitud aparente, hasta que no se le sume cfact, que convierte sum_s a flujo a una distancia DLUM
+    return sum_s, mag
 
 @njit
-def mag_v1_0(ws, fs, ns, fmag, flux, nf, nlf, wf, rf, wv, fv, nv, dlum, zeta):
-    ZP = np.zeros(nf) # para cada filtro la magnitud de vega
-    mnormf = np.zeros(nf) # flujo de Vega convolucionado con el filtro
+def mag_v1_0(ws, fs, ns, fmag, flux, nf, nlf, wf, rf, dlum, zeta):
 
     # unit conversion from lum[erg/s/A] to flux[erg/s/A/cm²] for sum_s, which is in units of  SOLAR LUMINOSITY
     cfact = 5. * log10(1.7685*1e8 * dlum ) # ESTO CONVIERTE sum_s DENTRO DE mag EN UN FLUJO (dividiendo por 4pidlum^2)
                                             # pasa dlum de MPC a CM y ademas pasa de Lo a 3.826*10^33
-    # INVERSE K-CORRECTION -- See Hogg et al. 2002
-    # ws_k = ws * (1.+zeta)
-    # fs_k = fs / (1.+zeta)
 
     # select filter in the lambda range of the spectrum and compute mag
     ws_min=ws[0]
@@ -227,21 +223,11 @@ def mag_v1_0(ws, fs, ns, fmag, flux, nf, nlf, wf, rf, wv, fv, nv, dlum, zeta):
 
     for i_f in range(nf):
         if wf[0, i_f] > ws_min and wf[nlf[i_f]-1, i_f] < ws_max:
-            sum_s, sum_v, mag = mymagnitude(wf[:,i_f], rf[:,i_f], nlf[i_f], ns, ws, fs, nv, wv, fv)
+            sum_s, mag = mymagnitude(wf[:,i_f], rf[:,i_f], nlf[i_f], ns, ws, fs)
             fmag[i_f] = mag+cfact  # MAGNITUD ABSOLUTA
             flux[i_f] = sum_s #FLUJO
-            mnormf[i_f] = sum_v
-            #fmag[i_f]=fmag[i_f]-2.401 # this term is 2.5*log(1/c) - 48.6
-            if i_f == 0:
-                fmag[i_f]=fmag[i_f]+0.91 #FROM VEGA TO AB
-            if i_f == 1:
-                fmag[i_f]=fmag[i_f]-0.08
-            if i_f == 2:
-                fmag[i_f]=fmag[i_f]+0.16
-            if i_f == 3:
-                fmag[i_f]=fmag[i_f]+0.37
 
-            ZP[i_f]=2.5*log10(sum_v)+cfact-2.401
+
 
 ##################################################################################################
 ##################################################################################################
@@ -411,7 +397,6 @@ def main(calipso_input, star_particle_data, ncell, vel_LOS, tam_i, tam_j, effect
     [CLIGHT, WAVELENGHTS, SSP, 
      AGE_SPAN, Z_SPAN, MH_SPAN, N_AGES, N_Z, N_W, 
      N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, 
-     W_VEGA, FLUX_VEGA, N_VEGA, 
      USUN, GSUN, RSUN, ISUN,
      I_START, I_END, DISP, LUMG, 
      zeta, dlum, arcsec2kpc, area_arc] = calipso_input
@@ -431,7 +416,7 @@ def main(calipso_input, star_particle_data, ncell, vel_LOS, tam_i, tam_j, effect
     # First: total quantities
     fmag_tot, flux_tot = calipso.calipso.mag_v1_0(WAVELENGHTS, fluxtot, N_W, 
                                                 N_F, N_LINES_FILTERS, np.max(N_LINES_FILTERS), W_FILTERS, RESPONSE_FILTERS, 
-                                                W_VEGA, FLUX_VEGA, N_VEGA, dlum, zeta) 
+                                                dlum, zeta) 
     
     lumtotu = flux_tot[0]
     lumtotg = flux_tot[1]
@@ -459,7 +444,7 @@ def main(calipso_input, star_particle_data, ncell, vel_LOS, tam_i, tam_j, effect
 
     sbf, magf, fluxf = calipso.calipso.magandfluxes(get_num_threads(), WAVELENGHTS, N_W, N_F, 
                                                     N_LINES_FILTERS, np.max(N_LINES_FILTERS),
-                                                    W_FILTERS, RESPONSE_FILTERS, W_VEGA, FLUX_VEGA, N_VEGA,
+                                                    W_FILTERS, RESPONSE_FILTERS,
                                                     dlum, zeta, ncell, ncell, flux_cell, area_arc)
 
     sbf[fluxf==0.] = np.nan # if flux is zero, magnitudes are undefined

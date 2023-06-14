@@ -82,10 +82,6 @@ with open('masclet_pyfof.dat', 'r') as f:
     f.readline()
     CALIPSO_FLAG = bool(int(f.readline()))
     f.readline()
-    ZP_5556 = float(f.readline())
-    f.readline()
-    SB_LIM = float(f.readline())
-    f.readline()
     CLIGHT = float(f.readline())
     f.readline() 
     USUN, GSUN, RSUN, ISUN = np.array(f.readline().split()[0].split(','), dtype = np.float64)
@@ -242,7 +238,6 @@ if CALIPSO_FLAG:
     print('Before FoF, reading calipso files..')
     WAVELENGHTS, SSP, AGE_SPAN, Z_SPAN, MH_SPAN, N_AGES, N_Z, N_W = pycalipso.readSSPfiles(DIRSSP, L_START, L_END)
     N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS = pycalipso.readFilters()
-    W_VEGA, FLUX_VEGA, N_VEGA = pycalipso.readVega(ZP_5556)
     print('.. done')
     dlum = 1.e-5 #10 pc --> absolute mag
     magssp = np.zeros((N_AGES,N_Z,N_F))
@@ -256,7 +251,7 @@ if CALIPSO_FLAG:
     for iage in range(N_AGES):
         for iZ in range(N_Z):
             pycalipso.mag_v1_0(WAVELENGHTS, SSP[iage, iZ, :], N_W, magssp[iage, iZ, :],
-                                fluxssp[iage, iZ, :], N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, W_VEGA, FLUX_VEGA, N_VEGA, dlum, zeta=0.0)
+                                fluxssp[iage, iZ, :], N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, dlum, zeta=0.0)
             
             LUMU[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 0]-USUN)) #luminosity in u filter (U band more or less)
             LUMG[iage,iZ]=10.**(-0.4*(magssp[iage,iZ, 1]-GSUN)) #luminosity in g filter (B band more or less)
@@ -793,7 +788,6 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             calipso_input = [ CLIGHT, WAVELENGHTS, SSP, 
                               AGE_SPAN, Z_SPAN, MH_SPAN,N_AGES, N_Z, N_W,
                               N_F, N_LINES_FILTERS, W_FILTERS, RESPONSE_FILTERS, 
-                              W_VEGA, FLUX_VEGA, N_VEGA,
                               USUN, GSUN, RSUN, ISUN,
                               I_START, I_END, DISP, LUMG,
                               zeta, dlum, arcsec2kpc, area_arc ]
