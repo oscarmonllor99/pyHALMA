@@ -14,7 +14,7 @@ import particle
 @njit
 def patch_to_particles(patch_res, patch_rx, patch_ry, patch_rz, patch_nx, patch_ny, 
                        patch_nz, patch_delta, patch_cr0amr, patch_solapst, patch_vx,
-                       patch_vy, patch_vz, patch_temp, box):
+                       patch_vy, patch_vz, patch_temp, box, rho_B):
 
     #max number of gas particles this patch can provide
     max_part_num = patch_nx * patch_ny * patch_nz
@@ -33,9 +33,6 @@ def patch_to_particles(patch_res, patch_rx, patch_ry, patch_rz, patch_nx, patch_
     y0 = patch_ry - patch_res/2
     z0 = patch_rz - patch_res/2
     partNum = 0
-    #conversion from rho_B to M_sun/mpc^3
-    rho_B = 1.8791e-29 #g/cm^3
-    rho_B *= units.g_to_sun / units.cm_to_mpc**3
     for ix in range(patch_nx):
         x = x0 + ix*patch_res #cell center
         if x > box[0] and x < box[1]:
@@ -61,7 +58,7 @@ def patch_to_particles(patch_res, patch_rx, patch_ry, patch_rz, patch_nx, patch_
 
 
 
-def AMRgrid_to_particles(L, ncoarse, grid_data, gas_data, Rrps, cx, cy, cz):
+def AMRgrid_to_particles(L, ncoarse, grid_data, gas_data, Rrps, cx, cy, cz, rho_B):
     ##################################################################################
     # This routine aims to pass from the AMR grid to a particle representation of the gas
     # We will put a gas particle in the center of each cell, with a mass equal to the cell mass
@@ -70,7 +67,6 @@ def AMRgrid_to_particles(L, ncoarse, grid_data, gas_data, Rrps, cx, cy, cz):
     #   2) Loop over the patches and for each cell inside which is not solaped or refined, put a particle
     #      with the corresponding mass, position, temperature and velocity
     ##################################################################################
-
     # LOAD DATA
     # GRID
     nl = grid_data[2]
@@ -130,7 +126,7 @@ def AMRgrid_to_particles(L, ncoarse, grid_data, gas_data, Rrps, cx, cy, cz):
             #CREATE PARTICLES FROM THE PATCH
             part_x, part_y, part_z, part_vx, part_vy, part_vz, part_mass, part_temp = patch_to_particles(patch_res, patch_rx, patch_ry, patch_rz, patch_nx, patch_ny, 
                                                                                                         patch_nz, patch_delta, patch_cr0amr, patch_solapst, patch_vx,
-                                                                                                        patch_vy, patch_vz, patch_temp, box)
+                                                                                                        patch_vy, patch_vz, patch_temp, box, rho_B)
             
             #APPEND PARTICLES TO THE GAS PARTICLES ARRAY
             gas_particles_x = np.append(gas_particles_x, part_x)
@@ -212,7 +208,7 @@ def brute_force_binding_energy_fortran(total_mass, total_x, total_y, total_z, te
 
 
 
-def RPS(rete, L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data, cx, cy, cz, vx, vy, vz, Rrps):
+def RPS(rete, L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data, cx, cy, cz, vx, vy, vz, Rrps, rho_B):
     ##################################################################################
     # This routine aims to calculate the bound/unbound mass gas fraction of each halo
     # For that, we have to pass from the AMR grid to a particle representation of the gas
@@ -251,7 +247,7 @@ def RPS(rete, L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data,
     #####################
 
     #####################  GAS AMR TO GAS PARTICLES
-    gas_x, gas_y, gas_z, gas_vx, gas_vy, gas_vz, gas_mass, gas_temp = AMRgrid_to_particles(L, ncoarse, grid_data, gas_data, Rrps, cx, cy, cz)
+    gas_x, gas_y, gas_z, gas_vx, gas_vy, gas_vz, gas_mass, gas_temp = AMRgrid_to_particles(L, ncoarse, grid_data, gas_data, Rrps, cx, cy, cz, rho_B)
 
     # CHECK THAT THE GAS PARTICLES ARE INSIDE R05
     gas_gcd = np.sqrt((gas_x-cx)**2 + (gas_y-cy)**2 + (gas_z-cz)**2) # galaxy-centric distance
@@ -309,7 +305,10 @@ def RPS(rete, L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data,
     ##################### RETURN VARIABLES
     total_gas_mass = np.sum(gas_mass)
     cold_bound_gas_mass = np.sum(gas_mass[cold*bound])
-    frac_cold_gas_mass = cold_bound_gas_mass/total_gas_mass
+    if total_gas_mass != 0.:
+        frac_cold_gas_mass = cold_bound_gas_mass/total_gas_mass
+    else:
+        frac_cold_gas_mass = 0.
     unbound_cold_gas_mass = np.sum(gas_mass[unbound*cold])
     unbound_hot_gas_mass = np.sum(gas_mass[unbound*hot])
 

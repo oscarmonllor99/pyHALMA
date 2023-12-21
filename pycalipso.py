@@ -1,6 +1,6 @@
 #  Created on Tuesday Oct 4 11:00:10 2022
 #  @author: ÓSCAR MONLLOR BERBEGAL
-
+import sys
 from numba import njit, prange, get_num_threads
 import numpy as np
 from astropy.io import fits
@@ -8,6 +8,10 @@ from math import log10
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 import calipso
+
+#Our things
+sys.path.append('/home/monllor/projects/')
+from masclet_framework import units
 
 ### AVISOS PARA ENTENDER EL CÓDIGO:
 # mag no es una magnitud. Al sumarle cfact: fmag = mag + cfact lo convertimos en una magnitud
@@ -205,7 +209,8 @@ def mymagnitude(wfilt, rfilt, nfilt, ns, ws, fs):
 
     #CONVOLUCIONAMOS Y APLICAMOS LA REGLA DEL TRAPECIO PARA INTEGRAR
     sum_s = trapecio(wfilt*fs_new*rfilt, wfilt) 
-    sum_v = trapecio(0.11*rfilt/wfilt, wfilt) 
+    ###################################################################  ---- 
+    sum_v = trapecio(0.11*rfilt/wfilt, wfilt) # AÇÒ ESTÀ MAL, MIRAR LA RUTINA DE FORTRAN!!! QUE ES LA QUE S'UTILITZA!!!!!
     mag = -2.5*log10(sum_s/sum_v) 
     #notar SUM_S es luminosidad y SUM_V es flujo, esto aún no es una magnitud aparente, hasta que no se le sume cfact, que convierte sum_s a flujo a una distancia DLUM
     return sum_s, mag
@@ -386,7 +391,7 @@ def put_particles_in_grid(grid_centers, x, y, z):
     return which_cell_x, which_cell_y, which_cell_z
 
 
-def main(calipso_input, star_particle_data, ncell, vel_LOS, tam_i, tam_j, effective_radius):
+def main(calipso_input, star_particle_data, ncell, vel_LOS, tam_i, tam_j, effective_radius, rete):
 
     ####### INPUT FORMAT
     # ncell is the number of cells in each direction (x,y,z)
@@ -424,7 +429,7 @@ def main(calipso_input, star_particle_data, ncell, vel_LOS, tam_i, tam_j, effect
     lumtoti = flux_tot[3]
 
     area_halo_com = np.pi*effective_radius**2 # comoving area of the halo in kpc^2
-    area_halo_pys = area_halo_com/((1.+zeta)*(1.+zeta)) # physical area of the halo in kpc^2
+    area_halo_pys = area_halo_com * rete** 2 *units.length_to_mpc**2 # physical area of the halo in kpc^2
     area_halo_arc = area_halo_pys/(arcsec2kpc*arcsec2kpc) # physical area of the halo in arcsec^2
 
     sb_u_tot = fmag_tot[0]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 u filter

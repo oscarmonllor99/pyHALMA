@@ -4,6 +4,7 @@ from numba import njit, prange, get_num_threads
 import sys
 from scipy.ndimage import gaussian_filter
 from scipy.optimize import curve_fit
+from sklearn.metrics import r2_score
 #Our things
 sys.path.append('/home/monllor/projects/')
 from masclet_framework import units, particles
@@ -259,7 +260,7 @@ def clean_cell(cx, cy, cz, M, RRHH, grid, part_list, st_x, st_y, st_z, st_vx, st
 
 def escape_velocity_unbinding_fortran(
 rete, L, ncoarse, grid_data, gas_data, masclet_dm_data, cx, cy, cz, vx, vy, vz, Rmax,
-part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, factor_v
+part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, factor_v, rho_B
                                      ):
     #####################  LOAD PARTICLE DATA
     # DM
@@ -288,7 +289,7 @@ part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, factor_v
 
     #####################  GAS AMR TO GAS PARTICLES
     gas_x, gas_y, gas_z, _, _, _, gas_mass, _ = halo_gas.AMRgrid_to_particles(
-                                                            L, ncoarse, grid_data,gas_data, Rmax, cx, cy, cz
+                                                            L, ncoarse, grid_data,gas_data, Rmax, cx, cy, cz, rho_B
                                                             )
 
     # CHECK THAT THE GAS PARTICLES ARE INSIDE R05
@@ -297,7 +298,7 @@ part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, factor_v
     gas_x = gas_x[inside_Rrps]
     gas_y = gas_y[inside_Rrps]
     gas_z = gas_z[inside_Rrps]
-    gas_mass = gas_mass[inside_Rrps]
+    gas_mass = gas_mass[inside_Rrps] #already in Msun
     
     # FROM COMOVING VOLUME TO PHYSICAL VOLUME
     gas_mass *= rete**3
@@ -326,10 +327,10 @@ part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, factor_v
     #BINDING ENERGY IS HIGHER THAN THE ONE CALCULATED INSIDE RMAX:
     binding_energy *= factor_v**2 # v_esc = 2*sqrt(2*|U|)
 
-    # CALCULTATE TOTAL ENERGY OF EACH GAS PARTICLE
+    # CALCULTATE KINETIC ENERGY OF EACH STAR PARTICLE
     gas_v2 = 0.5 * ( (st_vx_halo-vx)**2 + (st_vy_halo-vy)**2 + (st_vz_halo-vz)**2) # km^2 s^-2
 
-    # TOTAL ENERGY OF EACH GAS PARTICLE
+    # TOTAL ENERGY OF EACH STAR PARTICLE
     total_energy = gas_v2 + binding_energy # km^2 s^-2
 
     bound = total_energy <= 0.
@@ -709,7 +710,7 @@ def sigma_projections(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, s
         return 0., 0., 0., 0., 0.
     
 
-def sigma_projections_fortran(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, 
+def sigma_projections_fortran(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, vx, vy, vz, st_mass, 
                               cx, cy, cz, R05x, R05y, R05z, ll):
     #input
     npart_f90 = np.int32(len(part_list))
@@ -719,9 +720,9 @@ def sigma_projections_fortran(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, 
     st_x_f90 = np.float32(st_x)
     st_y_f90 = np.float32(st_y)
     st_z_f90 = np.float32(st_z)
-    st_vx_f90 = np.float32(st_vx)
-    st_vy_f90 = np.float32(st_vy)
-    st_vz_f90 = np.float32(st_vz)
+    st_vx_f90 = np.float32(st_vx - vx)
+    st_vy_f90 = np.float32(st_vy - vy)
+    st_vz_f90 = np.float32(st_vz - vz)
     st_mass_f90 = np.float32(st_mass)
     cx_f90 = np.float32(cx)
     cy_f90 = np.float32(cy)
@@ -797,7 +798,7 @@ def halo_shape_fortran(part_list, st_x, st_y, st_z, st_mass, cx, cy, cz, RAD05):
     return a,b,c
 
 @njit
-def simple_fit(R_list_centers, dR, x_pos, y_pos, z_pos):
+def simple_surface_density(R_list_centers, dR, x_pos, y_pos, z_pos):
     Nc = len(R_list_centers)
     npart = len(x_pos)
     surface_density_xy = np.zeros(Nc)
@@ -822,7 +823,7 @@ def simple_fit(R_list_centers, dR, x_pos, y_pos, z_pos):
         if iR_yz < Nc:
             surface_density_yz[iR_yz] += 1.
 
-    #normalize
+    #Divide by area of each radial bin
     surface_density_xy /= (2.*np.pi*R_list_centers*dR)
     surface_density_xz /= (2.*np.pi*R_list_centers*dR)
     surface_density_yz /= (2.*np.pi*R_list_centers*dR)
@@ -831,7 +832,7 @@ def simple_fit(R_list_centers, dR, x_pos, y_pos, z_pos):
 
 
 
-def simple_sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05):
+def simple_sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05, LL, npart):
     ##################################################################################################
     # THIS FUNCTION COMPUTES THE SERSIC INDEX OF THE STELLAR HALO ASSUMING CONTOURS ARE CIRCULAR.
     # IT COUNTS THE NUMBER OF PARTICLES IN RADIAL BINS AND FITS A SERSIC PROFILE TO THE SURFACE DENSITY
@@ -853,6 +854,10 @@ def simple_sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05):
     x_pos = st_x[part_list]-cx 
     y_pos = st_y[part_list]-cy
     z_pos = st_z[part_list]-cz
+    # if len(x_pos) > 300:
+    #     plt.imshow(np.histogram2d(x_pos, y_pos, bins = 50)[0], origin = 'lower')
+    #     plt.Circle((0,0), R_fit_max, color = 'r')
+    #     plt.show()
     R_pos = ((x_pos)**2 + (y_pos)**2 + (z_pos)**2)**0.5
 
     part_list = part_list[R_pos < R_fit_max]
@@ -867,17 +872,28 @@ def simple_sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05):
     z_pos = z_pos[R_pos > R_fit_min]
     R_pos = ((x_pos)**2 + (y_pos)**2 + (z_pos)**2)**0.5 
 
+    # #TEST PLOT histogram with bin size = LL 
+    # if npart == 14430:
+    #     plt.hist2d(x_pos, y_pos, bins = int(2*R_fit_max/LL) + 1)
+    #     plt.show()
+
+
     #RADIAL BINNING
-    Nc = 10 # number of "contours", radial bins
-    R_list, dR = np.linspace(R_fit_min, R_fit_max, Nc + 1, retstep = True)
+    dR = LL #0.1*R05 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    R_list = np.arange(R_fit_min, (int(R_fit_max/dR) + 2)*dR, dR)
     R_list_centers = (R_list[1:] + R_list[:-1])/2.
 
-    surface_density_xy, surface_density_xz, surface_density_yz = simple_fit(R_list_centers, dR, x_pos, y_pos, z_pos)
+    surface_density_xy, surface_density_xz, surface_density_yz = simple_surface_density(R_list_centers, dR, x_pos, y_pos, z_pos)
 
-    # APPLYING A GAUSSIAN FILTER TO SMOOTH THE SURFACE DENSITY
-    surface_density_xy = gaussian_filter(surface_density_xy, sigma = 0.5)
-    surface_density_xz = gaussian_filter(surface_density_xz, sigma = 0.5)
-    surface_density_yz = gaussian_filter(surface_density_yz, sigma = 0.5)
+    # #TEST PLOT 
+    # if npart == 14430:
+    #     plt.plot(R_list_centers, surface_density_xy, 'k.')
+    #     plt.show()
+
+    # # APPLYING A GAUSSIAN FILTER TO SMOOTH THE SURFACE DENSITY
+    # surface_density_xy = gaussian_filter(surface_density_xy, sigma = 0.5)
+    # surface_density_xz = gaussian_filter(surface_density_xz, sigma = 0.5)
+    # surface_density_yz = gaussian_filter(surface_density_yz, sigma = 0.5)
 
     # FIT THE TAIL: FROM SUPREME TO R_fit_max
     # FIND THE PEAK OF THE SURFACE DENSITY
@@ -886,6 +902,8 @@ def simple_sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05):
     surface_density_xy = surface_density_xy[iRmax:]
     surface_density_xz = surface_density_xz[iRmax:]
     surface_density_yz = surface_density_yz[iRmax:]
+
+
     
     #FITTING THE SERSIC PROFILE
     def sersic(R, Re, Ie, n):
@@ -900,52 +918,68 @@ def simple_sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05):
     try:
         param_xy, _ = curve_fit(sersic, R_list_centers, surface_density_xy, p0 = guess_xy)
         n_xy = param_xy[2]
+        predic_xy = sersic(R_list_centers, *param_xy)
+        r2_xy = r2_score(surface_density_xy, predic_xy)
     except:
         n_xy = np.nan
+        r2_xy = np.nan
 
     #FIT XZ
     try:
         param_xz, _ = curve_fit(sersic, R_list_centers, surface_density_xz, p0 = guess_xz)
         n_xz = param_xz[2]
+        predic_xz = sersic(R_list_centers, *param_xz)
+        r2_xz = r2_score(surface_density_xz, predic_xz)
     except:
         n_xz = np.nan
+        r2_xz = np.nan
 
     #FIT YZ
     try:
         param_yz, _ = curve_fit(sersic, R_list_centers, surface_density_yz, p0 = guess_yz)
         n_yz = param_yz[2]
+        predic_yz = sersic(R_list_centers, *param_yz)
+        r2_yz = r2_score(surface_density_yz, predic_yz)
     except:
         n_yz = np.nan
+        r2_yz = np.nan
 
     #CHECK UNUSUAL VALUES OF n
-    if n_xy < 0.2 or n_xy > 10.:
+    if n_xy < 0.2 or n_xy > 30.:
         n_xy = np.nan
-    if n_xz < 0.2 or n_xz > 10.:
+    if n_xz < 0.2 or n_xz > 30.:
         n_xz = np.nan
-    if n_yz < 0.2 or n_yz > 10.:
+    if n_yz < 0.2 or n_yz > 30.:
         n_yz = np.nan
 
-    # PLOT THE 3 FITS TO CHECK, IF THEY SUCCEDED
-    # print('n_xy = ', n_xy)
-    # print('n_xz = ', n_xz)
-    # print('n_yz = ', n_yz)
-    # fig, ax = plt.subplots(1, 3, figsize = (15, 5))
-    # ax[0].plot(R_list_centers, surface_density_xy, 'k.')
-    # if not np.isnan(n_xy):
-    #     ax[0].plot(R_list_centers, sersic(R_list_centers, *param_xy), 'r--')
-    # ax[0].set_title('XY')
+    # #PLOT THE 3 FITS TO CHECK, IF THEY SUCCEDED
+    # if len(x_pos) > 300:
+    #     print('n_xy = ', n_xy, 'r2_xy = ', r2_xy)
+    #     print('n_xz = ', n_xz, 'r2_xz = ', r2_xz)
+    #     print('n_yz = ', n_yz, 'r2_yz = ', r2_yz)
+    #     fig, ax = plt.subplots(1, 3, figsize = (15, 5))
+    #     ax[0].plot(R_list_centers, surface_density_xy, 'k.')
+    #     if not np.isnan(n_xy):
+    #         ax[0].plot(R_list_centers, sersic(R_list_centers, *param_xy), 'r--')
+    #     ax[0].set_title('XY')
 
-    # ax[1].plot(R_list_centers, surface_density_xz, 'k.')
-    # if not np.isnan(n_xz):
-    #     ax[1].plot(R_list_centers, sersic(R_list_centers, *param_xz), 'r--')
-    # ax[1].set_title('XZ')
+    #     ax[1].plot(R_list_centers, surface_density_xz, 'k.')
+    #     if not np.isnan(n_xz):
+    #         ax[1].plot(R_list_centers, sersic(R_list_centers, *param_xz), 'r--')
+    #     ax[1].set_title('XZ')
 
-    # ax[2].plot(R_list_centers, surface_density_yz, 'k.')
-    # if not np.isnan(n_yz):
-    #     ax[2].plot(R_list_centers, sersic(R_list_centers, *param_yz), 'r--')
-    # ax[2].set_title('YZ')
-    # plt.show()
+    #     ax[2].plot(R_list_centers, surface_density_yz, 'k.')
+    #     if not np.isnan(n_yz):
+    #         ax[2].plot(R_list_centers, sersic(R_list_centers, *param_yz), 'r--')
+    #     ax[2].set_title('YZ')
+    #     plt.show()
 
-    # NANMEAN
-    n = np.nanmean([n_xy, n_xz, n_yz])
-    return n
+    # which projection has the best fit?
+    if np.nanmax([r2_xy, r2_xz, r2_yz]) == r2_xy:
+        return n_xy
+    elif np.nanmax([r2_xy, r2_xz, r2_yz]) == r2_xz:
+        return n_xz
+    elif np.nanmax([r2_xy, r2_xz, r2_yz]) == r2_yz:
+        return n_yz
+    
+    return np.nan

@@ -1,6 +1,6 @@
 *************MAIN PARAMETERS**********************************************
 firts, last iteration,write interval ------------------------------------>
-2100,2100,50
+250,250,50
 MASCLET cells nx,ny,nz: coarse hydro. grid ------------------------------>
 128,128,128
 hubble cte(h), OMEGA matter, t0 ----------------------------------------->
@@ -8,7 +8,7 @@ hubble cte(h), OMEGA matter, t0 ----------------------------------------->
 initial redshift, box size    ------------------------------------------->
 100.0,40.
 link(Mpc) (fixed) ------------------------------------------------------->
-0.002
+0.0025
 Min num. part. per halo ------------------------------------------------->
 50
 phase space cleaning (v/sigma), min. num. of part in cell --------------->
@@ -18,17 +18,17 @@ escape velocity cleaning: (0 -> no, 1 -> yes ), factor for cleaning ----->
 OLD MASCLET (0 -> no, 1 -> yes )----------------------------------------->
 0
 WRITE HALO PARTICLES (0 -> no, 1 -> yes ) ------------------------------->
-0
+1
 CALCULATE RPS (0 -> no, 1 -> yes ) -------------------------------------->
 0
 Name for the catalogue -------------------------------------------------->
-halma_catalogue_from_PYFOF_cluster_2023_18.res
+pyHALMA_catalogue_full_box_2.res
 Number of CPU cores for NUMBA and OpenMP to parallelize ----------------->
 24
 **************************************************************************
 *************CALIPSO PARAMETERS*******************************************
 CALIPSO (0 -> no, 1 -> yes ) -------------------------------------------->
-1
+0
 Speed of light (km/s) --------------------------------------------------->
 299792.458
 Sun magnitude in SDSS filters (u, g, r, i) , AB magnitude --------------->

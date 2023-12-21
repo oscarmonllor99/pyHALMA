@@ -212,15 +212,15 @@ contains
 
     ! convolution with the response function of the filter
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    ! mag_AB_bandpass = -2.5*log10(Int1/Int2). 
+    ! mag_AB_bandpass = -2.5*log10(Int1/Int2) - 2.4
 
     !!! In lambda, the integrals are:
-    ! Int1 = Integral(f_lambda * R_lambda * lambda * dlambda)
-    ! Int2 = Integral(0.11 * R_lambda / lambda * dlambda) with lambda in Amstrongs and f_lambda in erg/s/cm^2/Ams
+    ! Int1 = Integral(f_lambda * R_lambda * lambda^3 * dlambda)
+    ! Int2 = Integral(R_lambda * lambda * dlambda) with lambda in Amstrongs and f_lambda in erg/s/cm^2/Ams
 
     !!! In nus, the integrals are:
     ! Int1 = Integral(f_nu * R_nu * dlognu)
-    ! Int2 = Integral(3631[Jy] * R_nu * dlognu)
+    ! Int2 = Integral(R_nu * dlognu)
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     call trapecio(f = fs_new*rfilt*wfilt**3, x = wfilt, n = nfilt, sum = intup)

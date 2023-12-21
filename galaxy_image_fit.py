@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import pyimfit
 from photutils.isophote import EllipseGeometry, Ellipse, build_ellipse_model
 from photutils.aperture import EllipticalAperture
 from scipy.optimize import curve_fit
