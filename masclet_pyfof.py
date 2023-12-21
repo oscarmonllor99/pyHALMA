@@ -504,10 +504,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 velocities_y[ihal], 
                 velocities_z[ihal]) = halo_properties.CM_velocity(mass, part_list, st_vx, st_vy, st_vz, st_mass)
                 
-                #TULLY-FISHER
-                tully_fisher_velocities[ihal] = halo_properties.tully_fisher_velocity(part_list, cx, cy, cz, st_x, st_y, st_z, 
-                                                                                    velocities_x[ihal], velocities_y[ihal], velocities_z[ihal], 
-                                                                                    st_vx, st_vy, st_vz, st_mass, rad05[ihal])
+
                 #ANGULAR MOMENTUM
                 (specific_angular_momentum_x[ihal], 
                 specific_angular_momentum_y[ihal],
@@ -517,6 +514,13 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 specific_angular_momentum[ihal] = ( specific_angular_momentum_x[ihal]**2 + 
                                                     specific_angular_momentum_y[ihal]**2 + 
                                                     specific_angular_momentum_z[ihal]**2 )**0.5
+                #TULLY-FISHER
+                tully_fisher_velocities[ihal] = halo_properties.tully_fisher_velocity(part_list, cx, cy, cz, st_x, st_y, st_z, 
+                                                                                    velocities_x[ihal], velocities_y[ihal], velocities_z[ihal],
+                                                                                    specific_angular_momentum_x[ihal], 
+                                                                                    specific_angular_momentum_y[ihal], 
+                                                                                    specific_angular_momentum_z[ihal], 
+                                                                                    st_vx, st_vy, st_vz, st_mass, rad05[ihal])
                 
                 #KINEMATIC MORPHOLOGY (Correa et al. 2017 [EAGLE])
                 kinematic_morphologies[ihal] = halo_properties.kinematic_morphology(part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, 

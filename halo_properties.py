@@ -58,21 +58,40 @@ def CM_velocity(M, part_list, st_vx, st_vy, st_vz, st_mass):
         return 0., 0., 0.
 
 @njit(parallel = True)
-def tully_fisher_velocity(part_list, cx, cy, cz, st_x, st_y, st_z, vx, vy, vz, st_vx, st_vy, st_vz, st_mass, RAD05):
+def tully_fisher_velocity(part_list, cx, cy, cz, st_x, st_y, st_z, vx, vy, vz, lx, ly, lz,
+                          st_vx, st_vy, st_vz, st_mass, RAD05):
     mass_contribution = 0.
     v_TF = 0.
     npart = len(part_list)
+    L_gal = np.array([lx, ly, lz]) # Angular momentum vector
+    u_L_gal = L_gal/np.linalg.norm(L_gal) # Unitary vector of the angular momentum
     for ip in prange(npart):
         ipp = part_list[ip]
-        dx = cx - st_x[ipp]
-        dy = cy - st_y[ipp]
-        dz = cz - st_z[ipp]
-        dist = (dx**2 + dy**2 + dz**2)**0.5
+        rx = st_x[ipp] - cx # Position of the particle relative to the galaxy
+        ry = st_y[ipp] - cy
+        rz = st_z[ipp] - cz
+        dist = (rx**2 + ry**2 + rz**2)**0.5
         if 0.9*RAD05 < dist < 1.1*RAD05:
-            v_TF += ( (st_vx[ipp] - vx)**2 + (st_vy[ipp] - vy)**2 + (st_vz[ipp] - vz)**2 )**0.5 * st_mass[ipp]
+            # Velocity vector of the particle relative to the galaxy CM
+            vvx = st_vx[ipp] - vx 
+            vvy = st_vy[ipp] - vy
+            vvz = st_vz[ipp] - vz
+            vi = np.array([vvx, vvy, vvz]) 
+
+            #unitary vector of radial direction of the particle in the plane perpendicular to the angular momentum
+            r_ip = np.array([rx, ry, rz])
+            R_ip = r_ip - np.dot(r_ip, u_L_gal)*u_L_gal
+            u_R_ip = R_ip/np.linalg.norm(R_ip)
+
+            #rotational velocity
+            v_rot = vi - np.dot(vi, u_L_gal)*u_L_gal - np.dot(vi, u_R_ip)*u_R_ip
+
+            #sum
+            v_TF += np.linalg.norm(v_rot) * st_mass[ipp]
             mass_contribution += st_mass[ipp]
             
     return v_TF/mass_contribution
+
 
 @njit
 def furthest_particle(cx, cy, cz, part_list, st_x, st_y, st_z):
@@ -459,6 +478,7 @@ def kinematic_morphology(part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_ma
     # Reference: Correa et al. 2017
     # The relation between galaxy morphology and colour in the EAGLE simulation
     # doi:10.1093/mnrasl/slx133
+    # Also see: https://academic.oup.com/mnras/article/485/1/972/5318646, where they compare k_co to lambda, v/sigma, etc.
     npart = len(part_list)
     kin_corot = 0. # co-rotation only
     kin_total = 0. # total
