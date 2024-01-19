@@ -386,6 +386,85 @@ def half_mass_radius(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass):
 
     return RAD05
 
+
+@njit
+def half_mass_radius_pop3(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass, st_met, MET_CRIT):
+    npart = len(part_list)
+    pop3_stars = np.zeros((npart,), dtype=np.bool_)
+    for ip in range(npart):
+        ipp = part_list[ip]
+        if st_met[ipp] < MET_CRIT:
+            pop3_stars[ip] = True
+
+    part_list_pop3 = part_list[pop3_stars]
+    npart_pop3 = len(part_list_pop3)
+    #FIRST SORT PARTICLES BY DISTANCE TO CM
+    RAD_part = np.zeros(npart_pop3)
+    for ip in range(npart_pop3):
+        ipp = part_list_pop3[ip]
+        dx = cx - st_x[ipp]
+        dy = cy - st_y[ipp]
+        dz = cz - st_z[ipp]
+        dist = (dx**2 + dy**2 + dz**2)**0.5
+        RAD_part[ip] = dist
+
+    RAD_sorted_index = np.argsort(RAD_part)
+    part_list_sorted = part_list_pop3[RAD_sorted_index]
+    RAD_part = np.sort(RAD_part)
+    RAD05 = np.min(RAD_part)
+    mass_sum = 0.
+    for ip in range(npart_pop3):
+        ipp = part_list_sorted[ip]
+        mass_sum += st_mass[ipp]
+        if mass_sum > 0.5*M:
+            break
+        else:
+            RAD05 = RAD_part[ip]
+
+    return RAD05
+
+
+
+@njit
+def half_mass_radius_pop3_SFR(cx, cy, cz, M, part_list, st_x, st_y, st_z, 
+                              st_mass, st_age, st_met, cosmo_time, dt, MET_CRIT):
+    npart = len(part_list)
+    SFRpop3_stars = np.zeros((npart,), dtype=np.bool_)
+    for ip in range(npart):
+        ipp = part_list[ip]
+        if st_age[ipp] > (cosmo_time-1.1*dt): #10% tolerance
+            if st_met[ipp] < MET_CRIT:
+                SFRpop3_stars[ip] = True
+
+    part_list_pop3 = part_list[SFRpop3_stars]
+    npart_pop3 = len(part_list_pop3)
+
+    #FIRST SORT PARTICLES BY DISTANCE TO CM
+    RAD_part = np.zeros(npart_pop3)
+    for ip in range(npart_pop3):
+        ipp = part_list_pop3[ip]
+        dx = cx - st_x[ipp]
+        dy = cy - st_y[ipp]
+        dz = cz - st_z[ipp]
+        dist = (dx**2 + dy**2 + dz**2)**0.5
+        RAD_part[ip] = dist
+
+    RAD_sorted_index = np.argsort(RAD_part)
+    part_list_sorted = part_list_pop3[RAD_sorted_index]
+    RAD_part = np.sort(RAD_part)
+    RAD05 = np.min(RAD_part)
+    mass_sum = 0.
+    for ip in range(npart_pop3):
+        ipp = part_list_sorted[ip]
+        mass_sum += st_mass[ipp]
+        if mass_sum > 0.5*M:
+            break
+        else:
+            RAD05 = RAD_part[ip]
+
+    return RAD05
+
+
 @njit
 def half_mass_radius_proj(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass):
     npart = len(part_list)
@@ -546,15 +625,30 @@ def density_peak(part_list, st_x, st_y, st_z, st_mass, ll):
     return grid_x[xmax], grid_y[ymax], grid_z[zmax]
 
 @njit(parallel = True)
-def star_formation(part_list, st_mass, st_age, cosmo_time, dt):
+def star_formation(part_list, st_mass, st_age, st_met, cosmo_time, dt, MET_CRIT):
     mass_sfr = 0.
+    mass_sfr_pop3 = 0.
     Npart = len(part_list)
     for ip in prange(Npart):
         ipp = part_list[ip]
         if st_age[ipp] > (cosmo_time-1.1*dt): #10% tolerance
-               mass_sfr += st_mass[ipp]
+            mass_sfr += st_mass[ipp]
+            if st_met[ipp] < MET_CRIT:
+                mass_sfr_pop3 += st_mass[ipp]
 
-    return mass_sfr 
+    return mass_sfr, mass_sfr_pop3
+
+@njit(parallel = True)
+def pop3_mass(part_list, st_mass, st_met, MET_CRIT):
+    mass_pop3 = 0.
+    Npart = len(part_list)
+    for ip in prange(Npart):
+        ipp = part_list[ip]
+        if st_met[ipp] < MET_CRIT:
+            mass_pop3 += st_mass[ipp]
+
+    return mass_pop3
+
 
 @njit(parallel = True)
 def sigma_effective(part_list, R05, st_x, st_y, st_z, st_vx, st_vy, st_vz, cx, cy, cz, vx, vy, vz):
@@ -1003,3 +1097,16 @@ def simple_sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05, LL, npart)
         return n_yz
     
     return np.nan
+
+
+def halo_SMBH(cx, cy, cz, rad05, bh_x, bh_y, bh_z, bh_mass):
+    bh_dist = np.sqrt((bh_x-cx)**2 + (bh_y-cy)**2 + (bh_z-cz)**2)
+    bh_inside = bh_dist < rad05
+    bh_mass_inside = bh_mass[bh_inside]
+    if len(bh_mass_inside) > 1:
+        return - np.max(bh_mass_inside)
+    elif len(bh_mass_inside) == 1:
+        return bh_mass_inside[0]
+    else:
+        return 0.
+    

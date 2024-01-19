@@ -1,6 +1,6 @@
 *************MAIN PARAMETERS**********************************************
 firts, last iteration,write interval ------------------------------------>
-250,250,50
+0,700,50
 MASCLET cells nx,ny,nz: coarse hydro. grid ------------------------------>
 128,128,128
 hubble cte(h), OMEGA matter, t0 ----------------------------------------->
@@ -8,9 +8,11 @@ hubble cte(h), OMEGA matter, t0 ----------------------------------------->
 initial redshift, box size    ------------------------------------------->
 100.0,40.
 link(Mpc) (fixed) ------------------------------------------------------->
-0.0025
+0.0024
 Min num. part. per halo ------------------------------------------------->
 50
+phase space cleaning (0 -> no, 1 -> yes ) ------------------------------->
+0
 phase space cleaning (v/sigma), min. num. of part in cell --------------->
 3.0,1
 escape velocity cleaning: (0 -> no, 1 -> yes ), factor for cleaning ----->
@@ -22,7 +24,7 @@ WRITE HALO PARTICLES (0 -> no, 1 -> yes ) ------------------------------->
 CALCULATE RPS (0 -> no, 1 -> yes ) -------------------------------------->
 0
 Name for the catalogue -------------------------------------------------->
-pyHALMA_catalogue_full_box_2.res
+pyHALMA_catalogue_full_box_2_HR.res
 Number of CPU cores for NUMBA and OpenMP to parallelize ----------------->
 24
 **************************************************************************
@@ -34,7 +36,15 @@ Speed of light (km/s) --------------------------------------------------->
 Sun magnitude in SDSS filters (u, g, r, i) , AB magnitude --------------->
 6.55,5.12,4.68,4.57
 Sun metallicity --------------------------------------------------------->
-0.019
+0.02
 Spectral range in which calculations are done (Amstrong) ---------------->
 1000,10000
+**************************************************************************
+*************ASOHF PARAMETERS**********************************************
+Combine with ASOHF catalogue (0 -> no, 1 -> yes ) ----------------------->
+0
+**************************************************************************
+*************POP3 PARAMETERS**********************************************
+Critical metallicity for PopIII stars  (times solar met)----------------->
+1e-4
 
