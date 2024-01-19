@@ -11,6 +11,8 @@ In order to be able to "give" light to the stellar particles, we use the E-MILES
 which assumes some type of IMF, and according to metallicity, mass and age, produces a given spectral distribution. Since this part is computationally expensive, it is implemented in Fortran with OpenOMP
 parallel directives. We use the AB system for magnitudes and the SDSS passbands, as it is usual in galactic astronomy.
 
+It is always interesting to know the properties of the dark matter haloes where the stellar haloes are living. Thus, by means of an ASOHF catalogue (see https://github.com/dvallesp/ASOHF), we search the corresponding dark matter halo for every galaxy.
+
 The Sérsic index fitting for the light image of each galaxy is done by means of https://github.com/astropy/photutils
 
 Just-in-time (JIT) compilation and automatic parallelization of the Python code is done thanks to https://numba.pydata.org/, allowing high computational speeds for less computationally expensive parts. Nevertheless, the heaviest parts (for instance the gas unbinding, which has O(N^2) complexity) are implemented in Fortran with OpenOMP directives. 
@@ -26,6 +28,7 @@ USAGE:
   - E-MILES --> directory of E-MILES SSP models
   - calipso_output --> where to save calipso outputs
   - halo_particles --> where to save particles indices of each halo found by the halo finder.
+  - asohf_results --> where to find the ASOHF catalogue
  
 * COMPILE "compile_f2py" with ./compile_f2py
 
