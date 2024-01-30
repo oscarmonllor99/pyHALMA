@@ -25,7 +25,12 @@ with open('masclet_pyfof.dat', 'r') as f:
     f.readline()
     Z0, L = np.array(f.readline().split()[0].split(','), dtype = np.float64)
     f.readline()
+    FULL_DOMAIN_FLAG = bool(int(f.readline()))
+    f.readline() #INPUT DOMAIN
+    X1, X2, Y1, Y2, Z1, Z2 = np.array(f.readline().split()[0].split(','), dtype = np.float64)
+    f.readline()
     LL, =  np.array(f.readline().split()[0].split(','), dtype = np.float64)
+    LL /= 1e3 #to Mpc
     f.readline()
     MINP, =  np.array(f.readline().split()[0].split(','), dtype = np.int32)
     f.readline()
@@ -45,6 +50,14 @@ with open('masclet_pyfof.dat', 'r') as f:
     CATALOGUE_NAME = f.readline()[:-1]
     f.readline()
     NCORE = int(f.readline())
+    f.readline()
+    f.readline() #SUBSTRUCTURE BLOCK
+    f.readline()
+    SUBSTRUCTURE_FLAG = bool(int(f.readline()))
+    f.readline()
+    MINP_SUB, DEC_FACTOR, MIN_LL, DIST_FACTOR = np.array(f.readline().split()[0].split(','), dtype = np.float64)
+    MINP_SUB = int(MINP_SUB)
+    MIN_LL /= 1e3 #to Mpc
     f.readline()
     f.readline() #CALIPSO BLOCK
     f.readline()
@@ -77,10 +90,10 @@ with open('masclet_pyfof.dat', 'r') as f:
 ########## ########## ########## ########## ########## 
 ########## ########## ########## ########## ########## 
 
-def good_groups(groups):
+def good_groups(groups, minp):
     good_index = np.zeros((len(groups), ), dtype = bool)  
     for ig in range(len(groups)):
-        if len(groups[ig]) >= MINP:
+        if len(groups[ig]) >= minp:
             good_index[ig] = True
     return good_index
 
@@ -129,7 +142,7 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
 {first_strings[40]:11s}{first_strings[41]:11s}{first_strings[42]:11s}{first_strings[43]:11s}{first_strings[44]:11s}{first_strings[45]:11s}{first_strings[46]:11s}\
 {first_strings[47]:11s}{first_strings[48]:11s}{first_strings[49]:11s}{first_strings[50]:11s}{first_strings[51]:11s}{first_strings[52]:11s}{first_strings[53]:11s}\
 {gap}{first_strings[54]:15s}{first_strings[55]:15s}{first_strings[56]:15s}{first_strings[57]:15s}{first_strings[58]:10s}{first_strings[59]:10s}\
-{first_strings[60]:6s}{first_strings[61]:15s}{first_strings[62]:10s}{first_strings[63]:15s}'
+{first_strings[60]:10s}{first_strings[61]:15s}{first_strings[62]:10s}{first_strings[63]:15s}'
         
         second_line = f'{second_strings[0]:6s}{second_strings[1]:10s}{second_strings[2]:15s}{second_strings[3]:15s}\
 {second_strings[4]:15s}{second_strings[5]:8s}{second_strings[6]:15s}{second_strings[7]:15s}{second_strings[8]:15s}\
@@ -141,7 +154,7 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
 {second_strings[40]:11s}{second_strings[41]:11s}{second_strings[42]:11s}{second_strings[43]:11s}{second_strings[44]:11s}{second_strings[45]:11s}{second_strings[46]:11s}\
 {second_strings[47]:11s}{second_strings[48]:11s}{second_strings[49]:11s}{second_strings[50]:11s}{second_strings[51]:11s}{second_strings[52]:11s}{second_strings[53]:11s}\
 {gap}{second_strings[54]:15s}{second_strings[55]:15s}{second_strings[56]:15s}{second_strings[57]:15s}{second_strings[58]:10s}{second_strings[59]:10s}\
-{second_strings[60]:6s}{second_strings[61]:15s}{second_strings[62]:10s}{second_strings[63]:15s}'
+{second_strings[60]:10s}{second_strings[61]:15s}{second_strings[62]:10s}{second_strings[63]:15s}'
         
 
 
@@ -185,7 +198,7 @@ def write_to_HALMA_catalogue(total_iteration_data, total_halo_data, name = 'halm
 {ih_values[48]:11.2f}{ih_values[49]:11.2f}{ih_values[50]:11.2f}{ih_values[51]:11.2f}\
 {ih_values[52]:11.2f}{ih_values[53]:11.2f}\
 {gap}{ih_values[54]:15.6e}{ih_values[55]:15.6e}{ih_values[56]:15.6e}{ih_values[57]:15.6e}{ih_values[58]:10.2f}{ih_values[59]:10.2f}\
-{ih_values[60]:6d}{ih_values[61]:15.6e}{ih_values[62]:10.2f}{ih_values[63]:15.6e}'
+{ih_values[60]:10d}{ih_values[61]:15.6e}{ih_values[62]:10.2f}{ih_values[63]:15.6e}'
 
             
             catalogue.write(catalogue_line)
@@ -297,6 +310,8 @@ part_insitu_before =  np.array([]) #For every particle, if it was insitu the pre
 part_ih_before =  np.array([]) #For every particle, the halo it belonged to in the previous iteration
 part_oripas_before =  np.array([]) #For every particle, the oripas iteration before
 
+FACTOR_R12 = 4. #FACTOR TIMES R12 TO CALCULATE POP3 STARS INSIDE A GALAXY AND DM MASS FOR HALOES WITHOUT ASOHF INTERSECTION
+
 oripas_before =  np.array([]) #For every halo, the oripas iteration before
 omm =  np.array([]) #MASSES OF THE HALOES OF THE PREVIOUS ITERATION
 for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
@@ -323,15 +338,25 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
     if it_count>0:
         dt = (cosmo_time - total_iteration_data[it_count-1]['t'])*units.time_to_yr/1e9
 
-    print('Cosmo time (Gyr):', cosmo_time*units.time_to_yr/1e9)
-    print('Redshift (z):', zeta)
+    print(f'Cosmo time (Gyr): {cosmo_time*units.time_to_yr/1e9:.2f}')
+    print(f'Redshift (z): {zeta:.2f}')
 
-    masclet_st_data = read_masclet.read_clst(iteration, path = PATH_RESULTS, parameters_path=PATH_RESULTS, 
-                                                    digits=5, max_refined_level=1000, 
-                                                    output_deltastar=False, verbose=False, output_position=True, 
-                                                    output_velocity=True, output_mass=True, output_time=True,
-                                                    output_metalicity=True, output_id=True, are_BH = not OLD_MASCLET,
-                                                    output_BH=True)
+
+    if FULL_DOMAIN_FLAG:
+        masclet_st_data = read_masclet.read_clst(iteration, path = PATH_RESULTS, parameters_path=PATH_RESULTS, 
+                                                        digits=5, max_refined_level=1000, 
+                                                        output_deltastar=False, verbose=False, output_position=True, 
+                                                        output_velocity=True, output_mass=True, output_time=True,
+                                                        output_metalicity=True, output_id=True, are_BH = not OLD_MASCLET,
+                                                        output_BH=True)
+    else:
+        read_region = ("box",X1,X2,Y1,Y2,Z1,Z2)
+        masclet_st_data = read_masclet.lowlevel_read_clst(iteration, path = PATH_RESULTS, parameters_path=PATH_RESULTS, 
+                                                        digits=5, max_refined_level=1000, 
+                                                        output_deltastar=False, verbose=False, output_position=True, 
+                                                        output_velocity=True, output_mass=True, output_time=True,
+                                                        output_metalicity=True, output_id=True, are_BH = not OLD_MASCLET,
+                                                        output_BH=True, read_region=read_region)
 
     st_x = masclet_st_data[0]
     st_y = masclet_st_data[1]
@@ -362,7 +387,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         groups = np.array(groups, dtype=object)
 
         #CLEAN THOSE HALOES with npart < minp
-        groups = groups[good_groups(groups)]
+        groups = groups[good_groups(groups, MINP)]
         print(len(groups),'haloes found')
         print()
 
@@ -374,36 +399,132 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
 
                 #READ CLUS
                 print('     Reading clus file')
-                gas_data = read_masclet.read_clus(iteration, path=PATH_RESULTS, parameters_path=PATH_RESULTS, digits=5, max_refined_level=1000, output_delta=True, 
-                                                    output_v=True, output_pres=False, output_pot=False, output_opot=False, output_temp=True, output_metalicity=False,
-                                                    output_cr0amr=True, output_solapst=True, is_mascletB=False, output_B=False, is_cooling=True, verbose=False)
+                if FULL_DOMAIN_FLAG:
+                    gas_data = read_masclet.read_clus(iteration, path=PATH_RESULTS, parameters_path=PATH_RESULTS, digits=5, max_refined_level=1000, output_delta=True, 
+                                                        output_v=True, output_pres=False, output_pot=False, output_opot=False, output_temp=True, output_metalicity=False,
+                                                        output_cr0amr=True, output_solapst=True, is_mascletB=False, output_B=False, is_cooling=True, verbose=False)
+                    
+                else:
+                    read_region = ("box",X1,X2,Y1,Y2,Z1,Z2)
+                    gas_data = read_masclet.lowlevel_read_clus(iteration, path=PATH_RESULTS, parameters_path=PATH_RESULTS, digits=5, max_refined_level=1000, output_delta=True, 
+                                                        output_v=True, output_pres=False, output_pot=False, output_opot=False, output_temp=True, output_metalicity=False,
+                                                        output_cr0amr=True, output_solapst=True, is_mascletB=False, output_B=False, is_cooling=True, verbose=False, 
+                                                        read_region=read_region)
 
 
                 #READ DM
                 print('     Reading DM file')
-                masclet_dm_data = read_masclet.read_cldm(iteration, path = PATH_RESULTS, parameters_path=PATH_RESULTS, 
-                                                            digits=5, max_refined_level=1000, output_deltadm = False,
-                                                            output_position=True, output_velocity=False, output_mass=True)
+                if FULL_DOMAIN_FLAG:
+                    masclet_dm_data = read_masclet.read_cldm(iteration, path = PATH_RESULTS, parameters_path=PATH_RESULTS, 
+                                                                digits=5, max_refined_level=1000, output_deltadm = False,
+                                                                output_position=True, output_velocity=False, output_mass=True)
+                else:
+                    read_region = ("box",X1,X2,Y1,Y2,Z1,Z2)
+                    masclet_dm_data = read_masclet.lowlevel_read_cldm(iteration, path = PATH_RESULTS, parameters_path=PATH_RESULTS, 
+                                                                digits=5, max_refined_level=1000, output_deltadm = False,
+                                                                output_position=True, output_velocity=False, output_mass=True, read_region=read_region)
                 print('     Done')
                 print()
 
             #READ ASOHF STELLAR AND DARK MATTER CATALOGUES
             if ASOHF_FLAG:
                 print('     Reading ASOHF files')
-                asohf_dm_data = read_asohf.read_families(iteration, path=PATH_ASOHF, output_format='arrays')
-                asohf_st_data = read_asohf.read_stellar_haloes(iteration, path=PATH_ASOHF, output_format='arrays')
+                if FULL_DOMAIN_FLAG:
+                    asohf_dm_data = read_asohf.read_families(iteration, path=PATH_ASOHF, output_format='arrays')
+                    asohf_st_data = read_asohf.read_stellar_haloes(iteration, path=PATH_ASOHF, output_format='arrays')
+                else:
+                    read_region = ("box",X1,X2,Y1,Y2,Z1,Z2)
+                    asohf_dm_data = read_asohf.read_families(iteration, path=PATH_ASOHF, output_format='arrays', read_region=read_region)
+                    asohf_st_data = read_asohf.read_stellar_haloes(iteration, path=PATH_ASOHF, output_format='arrays', read_region=read_region)
+
                 asohf_st_num = len(asohf_st_data['id'])
                 asohf_dm_num = len(asohf_dm_data['id'])
+
                 print('     Done')
                 print()
 
-                if not (RPS_FLAG or ESCAPE_CLEANING):
+                if not (RPS_FLAG or ESCAPE_CLEANING): #if not opened before, open dm file
                     print('     Reading DM file')
-                    masclet_dm_data = read_masclet.read_cldm(iteration, path = PATH_RESULTS, parameters_path=PATH_RESULTS, 
-                                                                digits=5, max_refined_level=1000, output_deltadm = False,
-                                                                output_position=True, output_velocity=False, output_mass=True)
+                    if FULL_DOMAIN_FLAG:
+                        masclet_dm_data = read_masclet.read_cldm(iteration, path = PATH_RESULTS, parameters_path=PATH_RESULTS, 
+                                                                    digits=5, max_refined_level=1000, output_deltadm = False,
+                                                                    output_position=True, output_velocity=False, output_mass=True)
+                    else:
+                        read_region = ("box",X1,X2,Y1,Y2,Z1,Z2)
+                        masclet_dm_data = read_masclet.lowlevel_read_cldm(iteration, path = PATH_RESULTS, parameters_path=PATH_RESULTS, 
+                                                                    digits=5, max_refined_level=1000, output_deltadm = False,
+                                                                    output_position=True, output_velocity=False, output_mass=True, read_region=read_region)
                     print('     Done')
 
+            ###########################################
+            ###########################################
+            #### SUBSTRUCTURE IDENTIFICATION BLOCK ####
+            if SUBSTRUCTURE_FLAG:
+                print('---> Identifying substructure (splitting bridges between separated FoF groups) <---')
+                counter_sub = 0
+                groups_before = np.copy(groups)
+                groups = groups.tolist()
+                for ihal in tqdm(range(len(groups_before))):
+                    part_list = np.array(groups_before[ihal])
+                    starting_npart = len(part_list)
+                    new_groups = []
+                    sub_LL = LL/DEC_FACTOR
+                    while sub_LL > MIN_LL:
+                        #Center of mass
+                        (cx, cy, cz, mass) = halo_properties.center_of_mass(part_list, st_x, st_y, st_z, st_mass)
+                        #Half mass radius
+                        r12 = halo_properties.half_mass_radius(cx, cy, cz, mass, part_list, st_x, st_y, st_z, st_mass)
+                        #Sub FoF
+                        data_sub = np.vstack((st_x[part_list], st_y[part_list], st_z[part_list])).T
+                        data_sub = data_sub.astype(np.float64)
+                        sub_groups = pyfof.friends_of_friends(data = data_sub, linking_length = sub_LL)
+                        sub_groups = np.array(sub_groups, dtype=object)
+                        sub_groups = sub_groups[good_groups(sub_groups, MINP_SUB)] 
+
+                        for group in sub_groups:
+                            part_fraction = len(group)/len(part_list)
+                            if 0.6 > part_fraction > 0.01:
+                                #Center of mass sub
+                                (cx_sub, cy_sub, cz_sub, mass_sub) = halo_properties.center_of_mass(
+                                                                    part_list[group], st_x, st_y, st_z, st_mass
+                                                                    )
+                                
+                                #Distance between centers of mass
+                                dist_sub = np.sqrt((cx-cx_sub)**2 + (cy-cy_sub)**2 + (cz-cz_sub)**2)
+
+                                if dist_sub > DIST_FACTOR * r12:
+                                    new_groups.append(part_list[group].tolist())
+                                    counter_sub += 1
+
+                        #eliminate particles in group from part_list
+                        for new_group in new_groups:
+                            part_list = np.setdiff1d(part_list, new_group)
+
+                        sub_LL = sub_LL/DEC_FACTOR
+
+                    #If more than 70% of the particles were eliminated, do not save the halo
+                    #This can happen if a MAJOR MERGER is being connected by a bridge
+                    if len(part_list)/starting_npart < 0.3: 
+                        groups[ihal] = []
+                        print('WARNING! Empty halo due to substructure identification!')
+                    else:
+                        groups[ihal] = part_list.tolist()
+
+                    #Append new groups:
+                    if len(new_groups) > 0:
+                        groups.extend(new_groups)
+
+                groups = np.array(groups, dtype=object)
+                #Remove empty groups
+                groups = groups[good_groups(groups, MINP_SUB)]
+
+                print('Substructures / Cut FoF bridges:', counter_sub)
+                print()
+            ###########################################
+            ###########################################
+
+
+            ###########################################
             #CALCULATE CM, CM_vel AND phase-space cleaning
             print('---> Phase-space cleaning begins <---')
             center_x = []
@@ -433,9 +554,9 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                                             )
                     part_list = part_list[bound] 
                 
-                #RECENTERING AFTER ESCAPE VELOCITY CLEANING
-                (cx, cy, cz, mass) = halo_properties.center_of_mass(part_list, st_x, st_y, st_z, st_mass)
-                most_distant_r = halo_properties.furthest_particle(cx, cy, cz, part_list, st_x, st_y, st_z)
+                    #RECENTERING AFTER ESCAPE VELOCITY CLEANING
+                    (cx, cy, cz, mass) = halo_properties.center_of_mass(part_list, st_x, st_y, st_z, st_mass)
+                    most_distant_r = halo_properties.furthest_particle(cx, cy, cz, part_list, st_x, st_y, st_z)
 
                 #PHASE-SPACE CLEANING
                 #Create 3D grid with cellsize 2*LL for cleaning. Calculate most distant particle to center of mass
@@ -503,10 +624,14 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             print('Number of haloes after phase-space cleaning:', num_halos)
             print('Number of particles in haloes after cleaning:', n_part_in_halos)
 
+            ##########################################################################
+            ##########################################################################
+
+
+            ##########################################################################
+            #CALCULATE HALO PROPERTIES
             print()
             print('Calculating properties')
-
-            #CALCULATE HALO PROPERTIES
             rad05 = np.zeros(num_halos)
             rad05_x = np.zeros(num_halos)
             rad05_y = np.zeros(num_halos)
@@ -610,7 +735,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 #SÉRSIC INDEX
                 sersic_indices[ihal] = halo_properties.simple_sersic_index(part_list, st_x, st_y, st_z, density_peak_x[ihal], density_peak_y[ihal], density_peak_z[ihal], rad05[ihal], LL, num_particles[ihal])
                 if it_count > 0:
-                    star_formation_masses[ihal], star_formation_pop3[ihal] = halo_properties.star_formation(part_list, st_mass, st_age, st_met, cosmo_time*units.time_to_yr/1e9, dt, MET_CRIT)
+                    star_formation_masses[ihal] = halo_properties.star_formation(part_list, st_mass, st_age, cosmo_time*units.time_to_yr/1e9, dt)
 
                 #SIGMA
                 sig_3D[ihal] = halo_properties.sigma_effective(part_list, rad05[ihal], st_x, st_y, st_z, st_vx, st_vy, st_vz, cx, cy, cz, 
@@ -652,17 +777,20 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
 
                 ############################################################################################################
                 # POP III
-                mass_pop3[ihal] = halo_properties.pop3_mass(part_list, st_mass, st_met, MET_CRIT)
+                dist_condition = np.sqrt((cx-st_x)**2 + (cy-st_y)**2 + (cz-st_z)**2) < FACTOR_R12*rad05[ihal]
+                particles_inside = np.arange(len(st_x))[dist_condition]
+                part_list_pop3 = np.unique(np.concatenate((part_list, particles_inside)))
+                part_list_pop3 = part_list_pop3[st_met[part_list_pop3] < MET_CRIT]
+
+                mass_pop3[ihal] = halo_properties.pop3_mass(part_list_pop3, st_mass)
                 if mass_pop3[ihal] > 0:
-                    rad05_pop3[ihal] = halo_properties.half_mass_radius_pop3(cx, cy, cz, mass_pop3[ihal], part_list, st_x, st_y, st_z, 
-                                                                         st_mass, st_met, MET_CRIT)
+                    rad05_pop3[ihal] = halo_properties.half_mass_radius_pop3(cx, cy, cz, mass_pop3[ihal], part_list_pop3, st_x, st_y, st_z, st_mass)
                 else:
                     rad05_pop3[ihal] = 0.
-
+                star_formation_pop3[ihal] = halo_properties.pop3_SFR_mass(part_list_pop3, st_mass, st_age, cosmo_time*units.time_to_yr/1e9, dt)
                 if star_formation_pop3[ihal] > 0:
-                    rad05_sfr_pop3[ihal] = halo_properties.half_mass_radius_pop3_SFR(cx, cy, cz, star_formation_pop3[ihal], part_list, 
-                                                                             st_x, st_y, st_z,
-                                                                             st_mass, st_age, st_met, cosmo_time*units.time_to_yr/1e9, dt, MET_CRIT)
+                    rad05_sfr_pop3[ihal] = halo_properties.half_mass_radius_pop3_SFR(cx, cy, cz, star_formation_pop3[ihal], part_list_pop3, 
+                                                                             st_x, st_y, st_z, st_mass, st_age, cosmo_time*units.time_to_yr/1e9, dt)
                 else:
                     rad05_sfr_pop3[ihal] = 0.
                 ############################################################################################################
@@ -780,13 +908,12 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 dm_y = masclet_dm_data[1]
                 dm_z = masclet_dm_data[2]
                 dm_mass = masclet_dm_data[3]*units.mass_to_sun
-                factor_R12 = 4.
                 @numba.njit(fastmath = True, parallel = True)
                 def DM_mass_inside_galaxy(ih):
                     xcm = center_x[ih]
                     ycm = center_y[ih]
                     zcm = center_z[ih]
-                    return np.sum(dm_mass[np.sqrt((xcm-dm_x)**2 + (ycm-dm_y)**2 + (zcm-dm_z)**2) < factor_R12*rad05[ih]])
+                    return np.sum(dm_mass[np.sqrt((xcm-dm_x)**2 + (ycm-dm_y)**2 + (zcm-dm_z)**2) < FACTOR_R12*rad05[ih]])
 
                 for ih in tqdm(range(num_halos)):
                     darkmatter_mass[ih] = DM_mass_inside_galaxy(ih)
@@ -807,15 +934,15 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 if ASOHF_FLAG:
                     print(f'CHECK min, max in ASOHF DM mass: {np.min(asohf_mass):.2e} {np.max(asohf_mass):.2e}')
                     print(f'CHECK number of matches with ASOHF DM haloes: {np.count_nonzero(asohf_IDs != -1)}', 'out of', num_halos)
-                    print(f'CHECK min, max in dark matter mass inside {int(factor_R12)} R_1/2:   {np.min(darkmatter_mass):.2e} {np.max(darkmatter_mass):.2e}')
+                    print(f'CHECK min, max in dark matter mass inside {int(FACTOR_R12)} R_1/2:   {np.min(darkmatter_mass):.2e} {np.max(darkmatter_mass):.2e}')
                 print()
 
 
 
 
-            ##########################################
+            ########################################################################################################################################
             ####### MERGER SECTION #####################
-            ##########################################
+            ########################################################################################################################################
 
 
             print('-------> MERGERS/PROGENITORS <-------')
@@ -928,14 +1055,19 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             ####### STARS IN SITU EX SITU #######################
             #####################################################
 
-            # print('-------> STARS IN SITU/EX SITU <-------')
+            print('-------> STARS IN SITU/EX SITU <-------')
             pop3_condition = st_met < MET_CRIT
-            for ih, halo in enumerate(new_groups):
-                #Halo particles
-                part_list = halo
+            for ih, halo in tqdm(enumerate(new_groups)):
+                #CONSIDER ALL STARS WITHIN 4*R_1/2 OF THE HALO CENTER and STARS BELONGING TO THE FoF group
+                dist_condition = np.sqrt((center_x[ih]-st_x)**2 + (center_y[ih]-st_y)**2 + (center_z[ih]-st_z)**2) < FACTOR_R12*rad05[ih]
+                particles_inside = np.arange(len(st_x))[dist_condition]
+                part_list = np.concatenate((halo, particles_inside))
+                part_list = np.unique(part_list)
+
                 #Divide between recently formed and old stars
                 sf_part = part_list[st_age[part_list] > (cosmo_time*units.time_to_yr/1e9 - 1.1*dt)]
                 old_part = part_list[st_age[part_list] <= (cosmo_time*units.time_to_yr/1e9 - 1.1*dt)]
+
                 #Recently formed are in situ by assumption
                 st_insitu[sf_part] = 1
 
@@ -957,10 +1089,11 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                         #check if the oripas of the particles in old_part are in oripas_in_situ_before
                         two_its_before = np.in1d(st_oripa[old_part], oripas_in_situ_before2, assume_unique = True).astype(int)
                         st_insitu[old_part] = np.logical_or(st_insitu[old_part], two_its_before).astype(int)
-                
+
+                #CALCULATE MASS OF POP III STARS
                 mass3_insitu[ih] = np.sum(st_mass[part_list]*st_insitu[part_list]*pop3_condition[part_list])
                 
-            # print('-------> DONE <-------')
+            print('-------> DONE <-------')
             
             ###########################################################
             ####### SORTING BY NUMBER OF PARTICLES ##################

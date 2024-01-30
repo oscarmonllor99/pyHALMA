@@ -9,6 +9,6 @@ coredumpsize=1m
 
 ulimit -s unlimited
 
-python3 masclet_pyfof.py
+python3 masclet_pyfof_pop3.py
 
 

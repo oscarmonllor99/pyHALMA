@@ -1,22 +1,26 @@
 *************MAIN PARAMETERS**********************************************
 firts, last iteration,write interval ------------------------------------>
-0,700,50
+0,1350,50
 MASCLET cells nx,ny,nz: coarse hydro. grid ------------------------------>
 128,128,128
 hubble cte(h), OMEGA matter, t0 ----------------------------------------->
 0.678,0.31,384.9627
 initial redshift, box size    ------------------------------------------->
 100.0,40.
-link(Mpc) (fixed) ------------------------------------------------------->
-0.0024
+Full domain (0 -> no, 1 -> yes ) ---------------------------------------->
+1
+If not, input domain (in input length units; x1,x2,y1,y2,z1,z2) --------->
+-20.0,20.0,-20.0,20.0,-20.0,20.0
+link(kpc) (fixed) ------------------------------------------------------->
+2.4
 Min num. part. per halo ------------------------------------------------->
 50
 phase space cleaning (0 -> no, 1 -> yes ) ------------------------------->
-0
+1
 phase space cleaning (v/sigma), min. num. of part in cell --------------->
 3.0,1
 escape velocity cleaning: (0 -> no, 1 -> yes ), factor for cleaning ----->
-0,2.0
+0,3.0
 OLD MASCLET (0 -> no, 1 -> yes )----------------------------------------->
 0
 WRITE HALO PARTICLES (0 -> no, 1 -> yes ) ------------------------------->
@@ -24,9 +28,15 @@ WRITE HALO PARTICLES (0 -> no, 1 -> yes ) ------------------------------->
 CALCULATE RPS (0 -> no, 1 -> yes ) -------------------------------------->
 0
 Name for the catalogue -------------------------------------------------->
-pyHALMA_catalogue_full_box_2_HR.res
+pyHALMA_catalogue_full_box_2.res
 Number of CPU cores for NUMBA and OpenMP to parallelize ----------------->
 24
+**************************************************************************
+*************SUBSTRUCTURE PARAMETERS**************************************
+Search for substructure (0 -> no, 1 -> yes ) ---------------------------->
+1
+MINP sub, dec. factor, MIN_LL(kpc), dist. factor ------------------------->
+50,2.,0.5,0.75
 **************************************************************************
 *************CALIPSO PARAMETERS*******************************************
 CALIPSO (0 -> no, 1 -> yes ) -------------------------------------------->

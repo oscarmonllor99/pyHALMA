@@ -388,15 +388,7 @@ def half_mass_radius(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass):
 
 
 @njit
-def half_mass_radius_pop3(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass, st_met, MET_CRIT):
-    npart = len(part_list)
-    pop3_stars = np.zeros((npart,), dtype=np.bool_)
-    for ip in range(npart):
-        ipp = part_list[ip]
-        if st_met[ipp] < MET_CRIT:
-            pop3_stars[ip] = True
-
-    part_list_pop3 = part_list[pop3_stars]
+def half_mass_radius_pop3(cx, cy, cz, M, part_list_pop3, st_x, st_y, st_z, st_mass):
     npart_pop3 = len(part_list_pop3)
     #FIRST SORT PARTICLES BY DISTANCE TO CM
     RAD_part = np.zeros(npart_pop3)
@@ -426,17 +418,10 @@ def half_mass_radius_pop3(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass, s
 
 
 @njit
-def half_mass_radius_pop3_SFR(cx, cy, cz, M, part_list, st_x, st_y, st_z, 
-                              st_mass, st_age, st_met, cosmo_time, dt, MET_CRIT):
-    npart = len(part_list)
-    SFRpop3_stars = np.zeros((npart,), dtype=np.bool_)
-    for ip in range(npart):
-        ipp = part_list[ip]
-        if st_age[ipp] > (cosmo_time-1.1*dt): #10% tolerance
-            if st_met[ipp] < MET_CRIT:
-                SFRpop3_stars[ip] = True
+def half_mass_radius_pop3_SFR(cx, cy, cz, M, part_list_pop3, st_x, st_y, st_z, 
+                              st_mass, st_age, cosmo_time, dt):
 
-    part_list_pop3 = part_list[SFRpop3_stars]
+    part_list_pop3 = part_list_pop3[st_age[part_list_pop3] > (cosmo_time-1.1*dt)] #10% tolerance
     npart_pop3 = len(part_list_pop3)
 
     #FIRST SORT PARTICLES BY DISTANCE TO CM
@@ -625,28 +610,24 @@ def density_peak(part_list, st_x, st_y, st_z, st_mass, ll):
     return grid_x[xmax], grid_y[ymax], grid_z[zmax]
 
 @njit(parallel = True)
-def star_formation(part_list, st_mass, st_age, st_met, cosmo_time, dt, MET_CRIT):
+def star_formation(part_list, st_mass, st_age, cosmo_time, dt):
     mass_sfr = 0.
-    mass_sfr_pop3 = 0.
     Npart = len(part_list)
     for ip in prange(Npart):
         ipp = part_list[ip]
         if st_age[ipp] > (cosmo_time-1.1*dt): #10% tolerance
             mass_sfr += st_mass[ipp]
-            if st_met[ipp] < MET_CRIT:
-                mass_sfr_pop3 += st_mass[ipp]
 
-    return mass_sfr, mass_sfr_pop3
+    return mass_sfr
 
 @njit(parallel = True)
-def pop3_mass(part_list, st_mass, st_met, MET_CRIT):
-    mass_pop3 = 0.
-    Npart = len(part_list)
-    for ip in prange(Npart):
-        ipp = part_list[ip]
-        if st_met[ipp] < MET_CRIT:
-            mass_pop3 += st_mass[ipp]
+def pop3_mass(part_list, st_mass):
+    mass_pop3 = np.sum(st_mass[part_list])
+    return mass_pop3
 
+def pop3_SFR_mass(part_list, st_mass, st_age, cosmo_time, dt):
+    part_list_SFR3 = part_list[st_age[part_list] > (cosmo_time-1.1*dt)] #10% tolerance
+    mass_pop3 = np.sum(st_mass[part_list_SFR3])
     return mass_pop3
 
 
