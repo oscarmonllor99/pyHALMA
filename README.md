@@ -1,6 +1,6 @@
 # pyHALMA
 
-This is a halo finder package for the MASCLET code (hydrodynamical N-body code designed for cosmological applications, https://doi.org/10.1111/j.1365-2966.2004.08040.x). It finds (star) particle clusters using the friends-of-friends algorithm pyfof (available at https://github.com/simongibbons/pyfof#pyfof) which uses an optimized R*-tree implemented in C++. 
+This is a halo finder package for the MASCLET code (hydrodynamical N-body code designed for cosmological applications, https://doi.org/10.1111/j.1365-2966.2004.08040.x). It finds (star) particle clusters (haloes) using the friends-of-friends algorithm pyfof (available at https://github.com/simongibbons/pyfof#pyfof) which uses an optimized R*-tree implemented in C++. It also tries to find substructures within the FoF groups in order to split bridges between different bound stellar structures. For every stellar halo found, the main progenitors are traced back in time in parallel.
 
 Given this clusters, the code calculates the physical quantities defining the stellar haloes and does a phase-space cleaning to avoid non-desired structures (unbound clusters, philaments, etc.)
 Then, it calculates for the physical stellar haloes (galaxies) many quantities of interest as: mass, star formation, gas mass, cold and bound gas mass fraction, radius, velocity dispersion, angular momentum,
@@ -11,11 +11,11 @@ In order to be able to "give" light to the stellar particles, we use the E-MILES
 which assumes some type of IMF, and according to metallicity, mass and age, produces a given spectral distribution. Since this part is computationally expensive, it is implemented in Fortran with OpenOMP
 parallel directives. We use the AB system for magnitudes and the SDSS passbands, as it is usual in galactic astronomy.
 
-It is always interesting to know the properties of the dark matter haloes where the stellar haloes are living. Thus, by means of an ASOHF catalogue (see https://github.com/dvallesp/ASOHF), we search the corresponding dark matter halo for every galaxy.
+It is always interesting to know the properties of the dark matter haloes where the stellar haloes are living. Thus, by means of an ASOHF catalogue (see https://github.com/dvallesp/ASOHF), we search the corresponding dark matter halo for every galaxy. 
 
 The Sérsic index fitting for the light image of each galaxy is done by means of https://github.com/astropy/photutils
 
-Just-in-time (JIT) compilation and automatic parallelization of the Python code is done thanks to https://numba.pydata.org/, allowing high computational speeds for less computationally expensive parts. Nevertheless, the heaviest parts (for instance the gas unbinding, which has O(N^2) complexity) are implemented in Fortran with OpenOMP directives. 
+Just-in-time (JIT) compilation and automatic parallelization of the Python code is done thanks to https://numba.pydata.org/, allowing high computational speeds for less computationally expensive parts. Nevertheless, the heaviest parts (for instance the gas unbinding, which has O(N^2) complexity) are implemented in Fortran with OpenOMP directives.
 
 Fortran is called within Python by means of F2PY: https://numpy.org/doc/stable/f2py/
 
@@ -30,7 +30,7 @@ USAGE:
   - halo_particles --> where to save particles indices of each halo found by the halo finder.
   - asohf_results --> where to find the ASOHF catalogue
  
-* COMPILE "compile_f2py" with ./compile_f2py
+* COMPILE "compile_f2py" with ./compile_f2py to create callable Fortran modules
 
 * Call ./run.sh with your desired options.
 
