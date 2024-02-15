@@ -8,6 +8,7 @@
     # 3. If not FULL_DOMAIN_FLAG, the code will only read the region defined by X1, X2, Y1, Y2, Z1, Z2.
     #    hence the indices will be referred to the region defined by X1, X2, Y1, Y2, Z1, Z2. Not the whole domain.
     # 4. LL calculated in the code as a function of stellar particle mass is experimental.
+    # 5. Distance variables are in COMOVING kpc
 
 import numpy as np
 import pyfof
@@ -1510,18 +1511,18 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         halo['Mcoldgas'] = cold_unbound_gas_masses[ih]
         halo['Mhotgas'] = hot_unbound_gas_masses[ih]
         halo['Msfr'] = star_formation_masses[ih]
-        halo['Rmax'] = rmax[ih]*rete*1e3*units.length_to_mpc #kpc
-        halo['R'] = rad05[ih]*rete*1e3*units.length_to_mpc
-        halo['R_1d'] = (rad05_x[ih] + rad05_y[ih] + rad05_z[ih])/3 * rete * 1e3 * units.length_to_mpc
-        halo['R_1dx'] = rad05_x[ih]*rete*1e3*units.length_to_mpc
-        halo['R_1dy'] = rad05_y[ih]*rete*1e3*units.length_to_mpc
-        halo['R_1dz'] = rad05_z[ih]*rete*1e3*units.length_to_mpc
+        halo['Rmax'] = rmax[ih]*1e3 #kpc
+        halo['R'] = rad05[ih]*1e3
+        halo['R_1d'] = (rad05_x[ih] + rad05_y[ih] + rad05_z[ih])/3 *1e3
+        halo['R_1dx'] = rad05_x[ih]*1e3 #kpc
+        halo['R_1dy'] = rad05_y[ih]*1e3
+        halo['R_1dz'] = rad05_z[ih]*1e3
         halo['sigma_v'] = sig_3D[ih]
         halo['sigma_v_1d'] = (sig_1D_x[ih] + sig_1D_y[ih] + sig_1D_z[ih])/3
         halo['sigma_v_1dx'] = sig_1D_x[ih]
         halo['sigma_v_1dy'] = sig_1D_y[ih]
         halo['sigma_v_1dz'] = sig_1D_z[ih]
-        halo['L'] = specific_angular_momentum[ih]*rete*1e3*units.length_to_mpc # kpc km/s
+        halo['L'] = specific_angular_momentum[ih]*1e3
         halo['xcm'] = density_peak_x[ih]*1e3 #kpc
         halo['ycm'] = density_peak_y[ih]*1e3
         halo['zcm'] = density_peak_z[ih]*1e3
@@ -1540,9 +1541,9 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         halo['lambda'] = lambda_ensellem[ih]
         halo['kin_morph'] = kinematic_morphologies[ih]
         halo['v_TF'] = tully_fisher_velocities[ih]
-        halo['a'] = s_axis_major[ih]*rete*1e3*units.length_to_mpc
-        halo['b'] = s_axis_intermediate[ih]*rete*1e3*units.length_to_mpc
-        halo['c'] = s_axis_minor[ih]*rete*1e3*units.length_to_mpc
+        halo['a'] = s_axis_major[ih]*1e3
+        halo['b'] = s_axis_intermediate[ih]*1e3
+        halo['c'] = s_axis_minor[ih]*1e3
         halo['sersic'] = sersic_indices[ih]
         #CALIPSO
         halo['lum_u'] = lum_u[ih]
@@ -1560,7 +1561,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         #ASOHF
         halo['asohf_ID'] = asohf_IDs[ih]
         halo['asohf_mass'] = asohf_mass[ih]
-        halo['asohf_Rvir'] = asohf_Rvir[ih]*rete*1e3*units.length_to_mpc
+        halo['asohf_Rvir'] = asohf_Rvir[ih]*1e3
         halo['darkmatter_mass'] = darkmatter_mass[ih]
         haloes.append(halo)
 
