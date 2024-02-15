@@ -28,5 +28,6 @@ USAGE:
  
 * COMPILE "compile_f2py" with ./compile_f2py to create callable Fortran modules
 
-* Call ./run.sh with your desired options.
+* Specify the most suitable options in pyHALMA.dat and other necessary parameters, like the path to "masclet_framework".
 
+* Call ./run.sh with your desired options.
