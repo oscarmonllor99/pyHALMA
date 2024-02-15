@@ -26,8 +26,6 @@ USAGE:
 * CREATE/LINK NECESSARY FOLDERS:
   - simu_masclet --> directory of MASCLET simulation results
   - E-MILES --> directory of E-MILES SSP models
-  - calipso_output --> where to save calipso outputs
-  - halo_particles --> where to save particles indices of each halo found by the halo finder.
   - asohf_results --> where to find the ASOHF catalogue
  
 * COMPILE "compile_f2py" with ./compile_f2py to create callable Fortran modules
