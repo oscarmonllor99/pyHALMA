@@ -8,9 +8,6 @@ from math import log10
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 import calipso
-
-#Our things
-sys.path.append('/home/monllor/projects/')
 from masclet_framework import units
 
 ### AVISOS PARA ENTENDER EL CÓDIGO:

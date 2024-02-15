@@ -5,8 +5,6 @@ import sys
 from scipy.ndimage import gaussian_filter
 from scipy.optimize import curve_fit
 from sklearn.metrics import r2_score
-#Our things
-sys.path.append('/home/monllor/projects/')
 from masclet_framework import units, particles
 import particle
 import halo_gas

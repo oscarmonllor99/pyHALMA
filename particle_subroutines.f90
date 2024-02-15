@@ -1,5 +1,7 @@
 ! Created on Mon May 24 2023
-! In this module the heaviest part of the gas unbinding is done
+! In this module the heaviest parts of particle calculations are
+! implemented. The module is called from the main program, which is
+! written in Python. The module is compiled with gfortran through f2py.
 
 MODULE particle
     implicit none
@@ -183,8 +185,7 @@ contains
     eigenvalues(:) = 0.
     mass_tot = 0.
 
-    !$OMP PARALLEL SHARED(npart, x, y, z, mass, inertia_tensor) &
-    !$OMP          PRIVATE(ip)
+    !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(ip)
     !$OMP DO REDUCTION(+:inertia_tensor)
     do ip=1,npart
         rvec(1) = x(ip)
@@ -259,10 +260,7 @@ contains
     quantas_y(:,:) = 0
     quantas_z(:,:) = 0
 
-    !$OMP PARALLEL SHARED(VCM_x, VCM_y, VCM_z, SD_x, SD_y, SD_z, quantas_x, quantas_y, quantas_z, &
-    !$OMP                 npart, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, cx, cy, cz, &
-    !$OMP                 grid) &
-    !$OMP          PRIVATE(ip, ipp, ix, iy, iz)
+    !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(ip, ipp, ix, iy, iz)
     !$OMP DO REDUCTION(+:VCM_x, VCM_y, VCM_z, SD_x, SD_y, SD_z, quantas_x, quantas_y, quantas_z)
     do ip=1,npart
         ipp = part_list(ip)
@@ -293,9 +291,7 @@ contains
     SIG_1d_y = 0.
     SIG_1d_z = 0.
 
-    !$OMP PARALLEL SHARED(VCM_x, VCM_y, VCM_z, npart, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, &
-    !$OMP                 cx, cy, cz, grid, SIG_1d_x, SIG_1d_y, SIG_1d_z) &
-    !$OMP          PRIVATE(ip, ipp, ix, iy, iz)
+    !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(ip, ipp, ix, iy, iz)
     !$OMP DO REDUCTION(+:SIG_1d_x, SIG_1d_y, SIG_1d_z)
     do ip=1,npart
         ipp = part_list(ip) 
@@ -323,9 +319,7 @@ contains
     counter_y = 0
     counter_z = 0
 
-    !$OMP PARALLEL SHARED(SIG_1d_x, SIG_1d_y, SIG_1d_z, npart, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, &
-    !$OMP                 counter_x, counter_y, counter_z, grid, R05x, R05y, R05z) &
-    !$OMP          PRIVATE(ip, ipp, ix, iy, iz, dx, dy, dz, dist_x, dist_y, dist_z)
+    !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(ip, ipp, ix, iy, iz, dx, dy, dz, dist_x, dist_y, dist_z)
     !$OMP DO REDUCTION(+:SIG_1D_x_05, SIG_1D_y_05, SIG_1D_z_05, counter_x, counter_y, counter_z)
     do ip=1,npart
         ipp = part_list(ip)
@@ -368,7 +362,6 @@ contains
     if (counter_z > 0) then
         SIG_1d_z_05 = SIG_1d_z_05/counter_z
     endif
-
 
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     !V/sigma and lambda part (Fast-Slow rotator)
@@ -498,7 +491,7 @@ contains
 
     binding_energy(:) = 0.
 
-    !$OMP PARALLEL SHARED(total_mass, total_x, total_y, total_z, test_x, test_y, test_z, binding_energy) &
+    !$OMP PARALLEL DEFAULT(SHARED) &
     !$OMP          PRIVATE(ip, ip2, r)
     !$OMP DO REDUCTION(+:binding_energy)
     do ip=1,ntest
@@ -519,5 +512,58 @@ contains
     !$OMP END PARALLEL
 
     END SUBROUTINE
+
+
+
+
+    ! SUBROUTINE gpu_brute_force_binding_energy(ntotal, &
+    !                 total_mass, total_x, total_y, total_z, &
+    !                 ntest, test_x, test_y, test_z, binding_energy)
+    ! use omp_lib
+    ! implicit none
+
+    ! !input
+    ! integer, intent(in) :: ntotal, ntest
+    ! real, dimension(ntotal), intent(in) :: total_mass, total_x, total_y, total_z
+    ! real, dimension(ntest), intent(in) :: test_x, test_y, test_z
+
+    ! !local
+    ! integer :: ip, ip2
+    ! real :: r
+
+    ! !output
+    ! real, dimension(ntest), intent(out) :: binding_energy
+
+    ! !!!!!!!!! FORTRAN / PYTHON WRAPPER
+    ! !f2py intent(in) :: ntotal, total_mass, total_x, total_y, total_z, ntest, test_x, test_y, test_z
+    ! !f2py intent(out) :: binding_energy
+    ! !f2py depend(ntotal) :: total_mass, total_x, total_y, total_z
+    ! !f2py depend(ntest) :: test_x, test_y, test_z
+
+    ! binding_energy(:) = 0.
+
+    ! !$omp target data map(to: total_mass(1:ntotal), total_x(1:ntotal), total_y(1:ntotal), total_z(1:ntotal), &
+    ! !$omp                     test_x(1:ntest), test_y(1:ntest), test_z(1:ntest)) &
+    ! !$omp             map(from: binding_energy(1:ntest))
+    ! !$omp target teams distribute parallel do reduction(+:binding_energy)       
+    ! do ip=1,ntest
+    ! do ip2=1,ntotal
+    !     if ( total_x(ip2) /= test_x(ip) ) then
+    !     if ( total_y(ip2) /= test_y(ip) ) then
+    !     if ( total_z(ip2) /= test_z(ip) ) then
+    !         r = sqrt( (total_x(ip2)-test_x(ip))**2 &
+    !                 + (total_y(ip2)-test_y(ip))**2 &
+    !                 + (total_z(ip2)-test_z(ip))**2 )
+    !         binding_energy(ip) = binding_energy(ip) + total_mass(ip2) / r
+    !     endif
+    !     endif
+    !     endif
+    ! enddo
+    ! enddo
+    ! !$omp end target teams distribute parallel do
+    ! !$omp end target data
+
+    ! END SUBROUTINE
+
 
 END MODULE

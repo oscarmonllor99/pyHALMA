@@ -4,9 +4,6 @@ from numba import njit, prange, set_num_threads, get_num_threads
 import numba
 import sys
 import time
-
-# our modules
-sys.path.append('/home/monllor/projects/')
 from masclet_framework import units, tools
 import particle
         

@@ -1,0 +1,61 @@
+*************MAIN PARAMETERS**********************************************
+firts, last iteration,write interval ------------------------------------>
+0,0,50
+MASCLET cells nx,ny,nz: coarse hydro. grid ------------------------------>
+128,128,128
+hubble cte(h), OMEGA matter, t0 ----------------------------------------->
+0.678,0.31,384.9627
+initial redshift, box size    ------------------------------------------->
+100.0,40.
+Full domain (0 -> no, 1 -> yes ) ---------------------------------------->
+1
+If not, input domain (in input length units; x1,x2,y1,y2,z1,z2) --------->
+-20.0,20.0,-20.0,20.0,-20.0,20.0 
+Stellar particle mass (Msun) -------------------------------------------->
+1.e6
+**************************************************************************
+************* FoF PARAMETERS**********************************************
+link(kpc) (fixed) ------------------------------------------------------->
+2.4
+choose link according to particle mass (0 -> no, 1 -> yes ) ------------->
+0
+Min num. part. per halo ------------------------------------------------->
+50
+phase space cleaning (0 -> no, 1 -> yes ) ------------------------------->
+1
+phase space cleaning (v/sigma), min. num. of part in cell --------------->
+3.0,1
+escape velocity cleaning: (0 -> no, 1 -> yes ), factor for cleaning ----->
+0,3.0
+CALCULATE RPS (0 -> no, 1 -> yes ) -------------------------------------->
+0
+**************************************************************************
+*************SETTING UP***************************************************
+Number of CPU cores for NUMBA and OpenMP to parallelize ----------------->
+24
+Path that contains masclet_framework ------------------------------------>
+/path/to/folder/containing/masclet_framework
+**************************************************************************
+*************SUBSTRUCTURE PARAMETERS**************************************
+Search for substructure (0 -> no, 1 -> yes ) ---------------------------->
+1
+MINP sub, dec. factor, MIN_LL(kpc), dist. factor ------------------------>
+50,2.,0.5,0.75
+**************************************************************************
+*************CALIPSO PARAMETERS*******************************************
+CALIPSO (0 -> no, 1 -> yes ) -------------------------------------------->
+0
+Speed of light (km/s) --------------------------------------------------->
+299792.458
+Sun magnitude in SDSS filters (u, g, r, i) , AB magnitude --------------->
+6.55,5.12,4.68,4.57
+Sun metallicity --------------------------------------------------------->
+0.02
+Spectral range in which calculations are done (Amstrong) ---------------->
+1000,10000
+**************************************************************************
+*************ASOHF PARAMETERS**********************************************
+Combine with ASOHF catalogue (0 -> no, 1 -> yes ) ----------------------->
+0
+Factor times half-mass radius to search for DM if there is not DM halo -->
+4.0
