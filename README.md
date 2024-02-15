@@ -13,13 +13,11 @@ parallel directives. We use the AB system for magnitudes and the SDSS passbands,
 
 It is always interesting to know the properties of the dark matter haloes where the stellar haloes are living. Thus, by means of an ASOHF catalogue (see https://github.com/dvallesp/ASOHF), we search the corresponding dark matter halo for every galaxy. 
 
-The Sérsic index fitting for the light image of each galaxy is done by means of https://github.com/astropy/photutils
-
 Just-in-time (JIT) compilation and automatic parallelization of the Python code is done thanks to https://numba.pydata.org/, allowing high computational speeds for less computationally expensive parts. Nevertheless, the heaviest parts (for instance the gas unbinding, which has O(N^2) complexity) are implemented in Fortran with OpenOMP directives.
 
 Fortran is called within Python by means of F2PY: https://numpy.org/doc/stable/f2py/
 
-Tools and readers developed in https://github.com/dvallesp/masclet_framework are necessary.
+Tools and readers developed in https://github.com/dvallesp/masclet_framework are necessary in order to load MASCLET data. There are also readers for the pyHALMA outputs.
 
 USAGE:
 
