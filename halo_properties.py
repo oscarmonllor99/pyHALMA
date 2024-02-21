@@ -287,11 +287,11 @@ part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, factor_v, rho_B
     dm_mass = masclet_dm_data[3]*units.mass_to_sun #in Msun
     # Search for the DM particles inside R05
     dm_gcd = np.sqrt((dm_x-cx)**2 + (dm_y-cy)**2 + (dm_z-cz)**2) # galaxy-centric distance
-    inside_Rrps = dm_gcd < Rmax
-    dm_x = dm_x[inside_Rrps]
-    dm_y = dm_y[inside_Rrps]
-    dm_z = dm_z[inside_Rrps]
-    dm_mass = dm_mass[inside_Rrps]
+    inside = dm_gcd < Rmax
+    dm_x = dm_x[inside]
+    dm_y = dm_y[inside]
+    dm_z = dm_z[inside]
+    dm_mass = dm_mass[inside]
 
     # STARS
     st_x_halo = st_x[part_list]
@@ -311,11 +311,11 @@ part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, factor_v, rho_B
 
     # CHECK THAT THE GAS PARTICLES ARE INSIDE R05
     gas_gcd = np.sqrt((gas_x-cx)**2 + (gas_y-cy)**2 + (gas_z-cz)**2) # galaxy-centric distance
-    inside_Rrps = gas_gcd < Rmax
-    gas_x = gas_x[inside_Rrps]
-    gas_y = gas_y[inside_Rrps]
-    gas_z = gas_z[inside_Rrps]
-    gas_mass = gas_mass[inside_Rrps] #already in Msun
+    inside = gas_gcd < Rmax
+    gas_x = gas_x[inside]
+    gas_y = gas_y[inside]
+    gas_z = gas_z[inside]
+    gas_mass = gas_mass[inside] #already in Msun
     
     # FROM COMOVING VOLUME TO PHYSICAL VOLUME
     gas_mass *= rete**3
@@ -333,6 +333,7 @@ part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, factor_v, rho_B
     # CALCULATE BINDING ENERGY OF EACH STAR PARTICLE
     binding_energy = halo_gas.brute_force_binding_energy_fortran(total_mass, total_x, total_y, total_z, 
                                                                 st_x_halo, st_y_halo, st_z_halo)
+    
     binding_energy = - binding_energy # binding energy is negative
 
     # Now the variable binding_energy is in units of Msun/mpc, we need to convert it to km^2/s^2
@@ -345,14 +346,16 @@ part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, factor_v, rho_B
     binding_energy *= factor_v**2 # v_esc = 2*sqrt(2*|U|)
 
     # CALCULTATE KINETIC ENERGY OF EACH STAR PARTICLE
-    gas_v2 = 0.5 * ( (st_vx_halo-vx)**2 + (st_vy_halo-vy)**2 + (st_vz_halo-vz)**2) # km^2 s^-2
+    st_v2 = 0.5 * ( (st_vx_halo-vx)**2 + (st_vy_halo-vy)**2 + (st_vz_halo-vz)**2) # km^2 s^-2
 
     # TOTAL ENERGY OF EACH STAR PARTICLE
-    total_energy = gas_v2 + binding_energy # km^2 s^-2
+    total_energy = st_v2 + binding_energy # km^2 s^-2
 
     bound = total_energy <= 0.
 
     return bound
+
+
 
 
 @njit

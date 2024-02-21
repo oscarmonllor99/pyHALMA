@@ -9,7 +9,9 @@
     #    hence the indices will be referred to the region defined by X1, X2, Y1, Y2, Z1, Z2. Not the whole domain.
     # 4. LL calculated in the code as a function of stellar particle mass is experimental.
     # 5. Distance variables are in COMOVING kpc
+    # 6. RMAX is calculated with respecto to the center of mass of the halo, not the density peak or the most bound particle.
 
+import time
 import numpy as np
 import pyfof
 import sys
@@ -21,6 +23,7 @@ import numba
 from tqdm import tqdm
 from math import acos
 from scipy.interpolate import RegularGridInterpolator
+from scipy.spatial import KDTree
 
 ########## ########## ########## ########## ########## 
 ########## INPUT PARAMETERS FROM pyHALMA.dat #########
@@ -61,6 +64,12 @@ with open('pyHALMA.dat', 'r') as f:
     ESCAPE_CLEANING = bool(int(ESCAPE_CLEANING))
     f.readline()
     RPS_FLAG = bool(int(f.readline()))
+    f.readline()
+    POT_ENERGY_FLAG = bool(int(f.readline()))
+    f.readline()
+    FACTOR_R12_POT = float(f.readline())
+    f.readline()
+    BRUTE_FORCE_LIM = int(f.readline())
     f.readline()
     f.readline()
     f.readline()
@@ -122,42 +131,48 @@ def write_catalogue(haloes, iteration_data, PYHALMA_OUTPUT):
     catalogue.write('      '.join(str(x) for x in [*iteration_data.values()]) + '\n')
     catalogue.write('**************************************************************' + '\n')
     gap = ''
-    first_strings = ['Halo','n','Mass','Mass','frac', 'm_rps','m_rps','m_SFR', 
+    first_strings = ['Halo','n','Mass', 'xcm','ycm','zcm', 'xpeak','ypeak','zpeak', 'xbound','ybound','zbound','id','Mass','frac', 'm_rps','m_rps','m_SFR', 
                         ' R ','R_05','R_05','R_05','R_05','R_05', 'sigma','sigma','sig_x',
-                        'sig_y','sig_z','j', 'c_x','c_y','c_z', 'V_x','V_y','V_z','Pro.','Pro.',
+                        'sig_y','sig_z','j', 'V_x','V_y','V_z','Pro.','Pro.',
                         'n','type', 'age','age', 'Z','Z', 'V/Sigma', 'lambda', 'k_co', 'v_TF', 'a', 'b', 'c', 'sersic',
                         'lum_u','lum_g','lum_r','lum_i','sb_u','sb_g','sb_r','sb_i','ur_color','gr_color','Mass',
                         'ASOHF', 'Mass', 'R_vir', 'Mass']
     
-    second_strings = ['ID',' part', ' * ','gas','g_cold',  'cold','hot','  * ', 'max','3D',
+    second_strings = ['ID',' part', ' * ', 'kpc','kpc','kpc', 'kpc','kpc','kpc', 'kpc','kpc','kpc', 'bound', 'gas','g_cold',  'cold','hot','  * ', 'max','3D',
                     '1D','1D_x','1D_y','1D_z', '05_3D','05_1D','05_1D','05_1D','05_1D',
-                    '  ', 'kpc','kpc','kpc', 'km/s','km/s','km/s',
+                    '  ', 'km/s','km/s','km/s',
                     '(1)','(2)','merg','merg','m_weig','mean', 'm_weig','mean', '  ', '  ', '  ', 
                     'km/s', 'kpc', 'kpc', 'kpc', '  ',
                     '  ','  ','  ','  ','  ','  ','  ','  ','  ','  ','BH',
                     'ID', 'ASOHF', '  ', 'DM']
     
     first_line = f'{first_strings[0]:6s}{first_strings[1]:10s}{first_strings[2]:15s}\
-{first_strings[3]:15s}{first_strings[4]:8s}{first_strings[5]:15s}{first_strings[6]:15s}{first_strings[7]:15s}\
-{first_strings[8]:10s}{first_strings[9]:10s}{first_strings[10]:10s}{first_strings[11]:10s}{first_strings[12]:10s}{first_strings[13]:10s}\
-{first_strings[14]:10s}{first_strings[15]:10s}{first_strings[16]:10s}{first_strings[17]:10s}{first_strings[18]:10s}{first_strings[19]:10s}\
-{first_strings[20]:10s}{first_strings[21]:10s}{first_strings[22]:10s}{first_strings[23]:10s}{first_strings[24]:10s}{first_strings[25]:10s}\
-{first_strings[26]:6s}{first_strings[27]:6s}{first_strings[28]:6s}{first_strings[29]:6s}{first_strings[30]:9s}{first_strings[31]:9s}\
-{first_strings[32]:11s}{first_strings[33]:11s}{first_strings[34]:11s}{first_strings[35]:11s}{first_strings[36]:11s}{first_strings[37]:11s}{first_strings[38]:11s}\
+{first_strings[3]:10s}{first_strings[4]:10s}{first_strings[5]:10s}\
+{first_strings[6]:10s}{first_strings[7]:10s}{first_strings[8]:10s}\
+{first_strings[9]:10s}{first_strings[10]:10s}{first_strings[11]:10s}{first_strings[12]:10s}\
+{first_strings[13]:15s}{first_strings[14]:8s}{first_strings[15]:15s}{first_strings[16]:15s}{first_strings[17]:15s}\
+{first_strings[18]:10s}{first_strings[19]:10s}{first_strings[20]:10s}{first_strings[21]:10s}{first_strings[22]:10s}{first_strings[23]:10s}\
+{first_strings[24]:10s}{first_strings[25]:10s}{first_strings[26]:10s}{first_strings[27]:10s}{first_strings[28]:10s}{first_strings[29]:10s}\
+{first_strings[30]:10s}{first_strings[31]:10s}{first_strings[32]:10s}\
+{first_strings[33]:6s}{first_strings[34]:6s}{first_strings[35]:6s}{first_strings[36]:6s}{first_strings[37]:9s}{first_strings[38]:9s}\
 {first_strings[39]:11s}{first_strings[40]:11s}{first_strings[41]:11s}{first_strings[42]:11s}{first_strings[43]:11s}{first_strings[44]:11s}{first_strings[45]:11s}\
-{first_strings[46]:11s}{first_strings[47]:11s}{first_strings[48]:11s}{first_strings[49]:11s}{first_strings[50]:11s}{first_strings[51]:11s}\
-{gap}{first_strings[52]:15s}{first_strings[53]:10s}{first_strings[54]:15s}{first_strings[55]:10s}{first_strings[56]:15s}'
+{first_strings[46]:11s}{first_strings[47]:11s}{first_strings[48]:11s}{first_strings[49]:11s}{first_strings[50]:11s}{first_strings[51]:11s}{first_strings[52]:11s}\
+{first_strings[53]:11s}{first_strings[54]:11s}{first_strings[55]:11s}{first_strings[56]:11s}{first_strings[57]:11s}{first_strings[58]:11s}\
+{gap}{first_strings[59]:15s}{first_strings[60]:10s}{first_strings[61]:15s}{first_strings[62]:10s}{first_strings[63]:15s}'
     
     second_line = f'{second_strings[0]:6s}{second_strings[1]:10s}{second_strings[2]:15s}\
-{second_strings[3]:15s}{second_strings[4]:8s}{second_strings[5]:15s}{second_strings[6]:15s}{second_strings[7]:15s}\
-{second_strings[8]:10s}{second_strings[9]:10s}{second_strings[10]:10s}{second_strings[11]:10s}{second_strings[12]:10s}{second_strings[13]:10s}\
-{second_strings[14]:10s}{second_strings[15]:10s}{second_strings[16]:10s}{second_strings[17]:10s}{second_strings[18]:10s}{second_strings[19]:10s}\
-{second_strings[20]:10s}{second_strings[21]:10s}{second_strings[22]:10s}{second_strings[23]:10s}{second_strings[24]:10s}{second_strings[25]:10s}\
-{second_strings[26]:6s}{second_strings[27]:6s}{second_strings[28]:6s}{second_strings[29]:6s}{second_strings[30]:9s}{second_strings[31]:9s}\
-{second_strings[32]:11s}{second_strings[33]:11s}{second_strings[34]:11s}{second_strings[35]:11s}{second_strings[36]:11s}{second_strings[37]:11s}{second_strings[38]:11s}\
+{second_strings[3]:10s}{second_strings[4]:10s}{second_strings[5]:10s}\
+{second_strings[6]:10s}{second_strings[7]:10s}{second_strings[8]:10s}\
+{second_strings[9]:10s}{second_strings[10]:10s}{second_strings[11]:10s}{second_strings[12]:10s}\
+{second_strings[13]:15s}{second_strings[14]:8s}{second_strings[15]:15s}{second_strings[16]:15s}{second_strings[17]:15s}\
+{second_strings[18]:10s}{second_strings[19]:10s}{second_strings[20]:10s}{second_strings[21]:10s}{second_strings[22]:10s}{second_strings[23]:10s}\
+{second_strings[24]:10s}{second_strings[25]:10s}{second_strings[26]:10s}{second_strings[27]:10s}{second_strings[28]:10s}{second_strings[29]:10s}\
+{second_strings[30]:10s}{second_strings[31]:10s}{second_strings[32]:10s}\
+{second_strings[33]:6s}{second_strings[34]:6s}{second_strings[35]:6s}{second_strings[36]:6s}{second_strings[37]:9s}{second_strings[38]:9s}\
 {second_strings[39]:11s}{second_strings[40]:11s}{second_strings[41]:11s}{second_strings[42]:11s}{second_strings[43]:11s}{second_strings[44]:11s}{second_strings[45]:11s}\
-{second_strings[46]:11s}{second_strings[47]:11s}{second_strings[48]:11s}{second_strings[49]:11s}{second_strings[50]:11s}{second_strings[51]:11s}\
-{gap}{second_strings[52]:15s}{second_strings[53]:10s}{second_strings[54]:15s}{second_strings[55]:10s}{second_strings[56]:15s}'
+{second_strings[46]:11s}{second_strings[47]:11s}{second_strings[48]:11s}{second_strings[49]:11s}{second_strings[50]:11s}{second_strings[51]:11s}{second_strings[52]:11s}\
+{second_strings[53]:11s}{second_strings[54]:11s}{second_strings[55]:11s}{second_strings[56]:11s}{second_strings[57]:11s}{second_strings[58]:11s}\
+{gap}{second_strings[59]:15s}{second_strings[60]:10s}{second_strings[61]:15s}{second_strings[62]:10s}{second_strings[63]:15s}'
     
 
 
@@ -167,6 +182,7 @@ def write_catalogue(haloes, iteration_data, PYHALMA_OUTPUT):
     catalogue.write('------------------------------------------------------------------------------------------------------------')
     catalogue.write('------------------------------------------------------------------------------------------------------------')
     catalogue.write('------------------------------------------------------------------------------------------------------------')
+    catalogue.write('--------------------------')
     catalogue.write('\n')
     catalogue.write('      '+first_line)
     catalogue.write('\n')
@@ -178,27 +194,30 @@ def write_catalogue(haloes, iteration_data, PYHALMA_OUTPUT):
     catalogue.write('------------------------------------------------------------------------------------------------------------')
     catalogue.write('------------------------------------------------------------------------------------------------------------')
     catalogue.write('------------------------------------------------------------------------------------------------------------')
+    catalogue.write('-------------------------')
     catalogue.write('\n')
     nhal = iteration_data['nhal']
     for ih in range(nhal):
         ih_values = [*haloes[ih].values()]
         catalogue_line = f'{ih_values[0]:6d}{gap}{ih_values[1]:10d}{gap}{ih_values[2]:15.6e}{gap}\
-{ih_values[3]:15.6e}{gap}{ih_values[4]:8.4f}{gap}\
-{ih_values[5]:15.6e}{gap}{ih_values[6]:15.6e}{gap}{ih_values[7]:15.6e}{gap}\
-{ih_values[8]:10.2f}{gap}{ih_values[9]:10.2f}{gap}{ih_values[10]:10.2f}{gap}\
-{ih_values[11]:10.2f}{gap}{ih_values[12]:10.2f}{gap}{ih_values[13]:10.2f}{gap}\
-{ih_values[14]:10.2f}{gap}{ih_values[15]:10.2f}{gap}{ih_values[16]:10.2f}{gap}\
-{ih_values[17]:10.2f}{gap}{ih_values[18]:10.2f}{gap}{ih_values[19]:10.2f}{gap}\
-{ih_values[20]:10.2f}{gap}{ih_values[21]:10.2f}{gap}{ih_values[22]:10.2f}{gap}\
-{ih_values[23]:10.2f}{gap}{ih_values[24]:10.2f}{gap}{ih_values[25]:10.2f}{gap}\
-{ih_values[26]:6d}{gap}{ih_values[27]:6d}{gap}{ih_values[28]:6d}{gap}{ih_values[29]:6d}{gap}\
-{ih_values[30]:9.3f}{gap}{ih_values[31]:9.3f}{gap}{ih_values[32]:11.3e}{gap}{ih_values[33]:11.3e}{gap}\
-{ih_values[34]:11.2f}{gap}{ih_values[35]:11.2f}{gap}{ih_values[36]:11.2f}{gap}\
-{ih_values[37]:11.2f}{gap}{ih_values[38]:11.2f}{gap}{ih_values[39]:11.2f}{gap}\
-{ih_values[40]:11.2f}{gap}{gap}{ih_values[41]:11.2f}{gap}{ih_values[42]:11.2e}{gap}\
-{ih_values[43]:11.2e}{gap}{ih_values[44]:11.2e}{gap}{ih_values[45]:11.2e}{gap}{ih_values[46]:11.2f}\
-{ih_values[47]:11.2f}{ih_values[48]:11.2f}{ih_values[49]:11.2f}{ih_values[50]:11.2f}{ih_values[51]:11.2f}\
-{ih_values[52]:15.6e}{ih_values[53]:10d}{ih_values[54]:15.6e}{ih_values[55]:10.2f}{ih_values[56]:15.6e}'  
+{ih_values[3]:10.2f}{gap}{ih_values[4]:10.2f}{gap}{ih_values[5]:10.2f}{gap}\
+{ih_values[6]:10.2f}{gap}{ih_values[7]:10.2f}{gap}{ih_values[8]:10.2f}{gap}\
+{ih_values[9]:10.2f}{gap}{ih_values[10]:10.2f}{gap}{ih_values[11]:10.2f}{gap}{ih_values[12]:10d}\
+{ih_values[13]:15.6e}{gap}{ih_values[14]:8.4f}{gap}\
+{ih_values[15]:15.6e}{gap}{ih_values[16]:15.6e}{gap}{ih_values[17]:15.6e}{gap}\
+{ih_values[18]:10.2f}{gap}{ih_values[19]:10.2f}{gap}{ih_values[20]:10.2f}{gap}\
+{ih_values[21]:10.2f}{gap}{ih_values[22]:10.2f}{gap}{ih_values[23]:10.2f}{gap}\
+{ih_values[24]:10.2f}{gap}{ih_values[25]:10.2f}{gap}{ih_values[26]:10.2f}{gap}\
+{ih_values[27]:10.2f}{gap}{ih_values[28]:10.2f}{gap}{ih_values[29]:10.2f}{gap}\
+{ih_values[30]:10.2f}{gap}{ih_values[31]:10.2f}{gap}{ih_values[32]:10.2f}{gap}\
+{ih_values[33]:6d}{gap}{ih_values[34]:6d}{gap}{ih_values[35]:6d}{gap}{ih_values[36]:6d}{gap}\
+{ih_values[37]:9.3f}{gap}{ih_values[38]:9.3f}{gap}{ih_values[39]:11.3e}{gap}{ih_values[40]:11.3e}{gap}\
+{ih_values[41]:11.2f}{gap}{ih_values[42]:11.2f}{gap}{ih_values[43]:11.2f}{gap}\
+{ih_values[44]:11.2f}{gap}{ih_values[45]:11.2f}{gap}{ih_values[46]:11.2f}{gap}\
+{ih_values[47]:11.2f}{gap}{gap}{ih_values[48]:11.2f}{gap}{ih_values[49]:11.2e}{gap}\
+{ih_values[50]:11.2e}{gap}{ih_values[51]:11.2e}{gap}{ih_values[52]:11.2e}{gap}{ih_values[53]:11.2f}\
+{ih_values[54]:11.2f}{ih_values[55]:11.2f}{ih_values[56]:11.2f}{ih_values[57]:11.2f}{ih_values[58]:11.2f}\
+{ih_values[59]:15.6e}{ih_values[60]:10d}{ih_values[61]:15.6e}{ih_values[62]:10.2f}{ih_values[63]:15.6e}'  
         catalogue.write(catalogue_line)
         catalogue.write('\n')
     
@@ -226,7 +245,7 @@ def write_catalogue(haloes, iteration_data, PYHALMA_OUTPUT):
 # SETTING UP masclet_framework
 sys.path.append(PATH_MASCLET_FRAMEWORK)
 from masclet_framework import read_masclet, units, read_asohf
-import halo_properties, halo_gas, pycalipso
+import halo_properties, halo_gas, pycalipso, fof
 ##############################################
 # SETTING UP FOLDERS 
 ##############################################
@@ -386,6 +405,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                                                 read_patchcellextension=True, read_patchcellposition=True, read_patchposition=True,
                                                 read_patchparent=False)
     cosmo_time = grid_data[1]
+    mass_dm_part = grid_data[3]*units.mass_to_sun
     zeta = grid_data[4]
     rete = RE0 / (1.0+zeta) # Scale factor at this iteration
     rho_B = RODO / rete**3 # Background density of the universe at this iteration
@@ -432,16 +452,37 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
     bh_z = masclet_st_data[12]
     bh_mass = masclet_st_data[16]*units.mass_to_sun #in Msun
 
-    data = np.vstack((st_x, st_y, st_z)).T
+    data = np.array((st_x, st_y, st_z)).T
     data = data.astype(np.float64)
     if len(data) > 0: #THERE ARE STAR PARTICLES
-        #APPLY FOF
         print()
         print(f'Number of star particles: {len(st_x):.2e}', )
+
+
+        ##############################################
+        print('     building stellar KDtree')
+        t0 = time.time()
+        data_st = data + L/2 # shift to 0, L
+        data_st[data_st >= L] = data_st[data_st >= L] - L # periodic boundary conditions
+        st_kdtree = KDTree(data_st, boxsize=np.array([L,L,L]), leafsize = 64)
+        print('     time to build STELLAR kdtree (sec):', time.time()-t0)
+        ##############################################
+
+        #APPLY FOF
+        print()
         print('----------> FoF begins <--------')
         print()
-        groups = pyfof.friends_of_friends(data = data, linking_length = LL)
+
+        t0 = time.time()
+        groups = fof.friends_of_friends_parallel(st_x, st_y, st_z, LL, L, MINP)
         groups = np.array(groups, dtype=object)
+        print('     my implementation:', time.time()-t0)
+
+
+        # t1 = time.time()
+        # groups = pyfof.friends_of_friends(data = data, linking_length = LL)
+        # groups = np.array(groups, dtype=object)
+        # print('     pyfof:', time.time()-t1)
 
         #CLEAN THOSE HALOES with npart < minp
         groups = groups[good_groups(groups, MINP)]
@@ -449,6 +490,9 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         print()
 
         if len(groups) > 0: #THERE ARE HALOES
+            
+            #in order to check if dark matter data is needed
+            masclet_dm_data = None
 
             #READ GAS IF RPS or ESCAPE VELOCITY CLEANING
             if RPS_FLAG or ESCAPE_CLEANING:
@@ -512,6 +556,19 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                                                                     digits=5, max_refined_level=1000, output_deltadm = False,
                                                                     output_position=True, output_velocity=False, output_mass=True, read_region=read_region)
                     print('     Done')
+
+            # BUILD DARK MATTER KDTREE FOR POT. ENERGY PURPOSES
+            if masclet_dm_data is not None:
+                ##############################################
+                print('     Building DM KDtree')
+                t0 = time.time()
+                data_dm = np.array((masclet_dm_data[0], masclet_dm_data[1], masclet_dm_data[2])).T
+                data_dm = data_dm + L/2 # shift to 0, L
+                data_dm[data_dm >= L] = data_dm[data_dm >= L] - L # periodic boundary conditions
+                dm_kdtree = KDTree(data_dm, boxsize=np.array([L,L,L]))
+                print('     Time to build DM kdtree:', time.time()-t0, 's')
+                ##############################################
+                print()
 
             ###########################################
             ###########################################
@@ -730,6 +787,10 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             asohf_mass = np.zeros(num_halos)
             asohf_Rvir = np.zeros(num_halos)
             darkmatter_mass = np.zeros(num_halos)
+            most_bound_x = np.zeros(num_halos)
+            most_bound_y = np.zeros(num_halos)
+            most_bound_z = np.zeros(num_halos)
+            most_bound_id = np.zeros(num_halos, dtype=np.int32)
 
             for ihal in tqdm(range(num_halos)):
                 #HALO PARTICLE INDICES
@@ -786,7 +847,11 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 s_axis_minor[ihal]) = halo_properties.halo_shape_fortran(part_list, st_x, st_y, st_z, st_mass, cx, cy, cz, rad05[ihal])
                 
                 #SÉRSIC INDEX
-                sersic_indices[ihal] = halo_properties.simple_sersic_index(part_list, st_x, st_y, st_z, density_peak_x[ihal], density_peak_y[ihal], density_peak_z[ihal], rad05[ihal], LL, num_particles[ihal])
+                sersic_indices[ihal] = halo_properties.simple_sersic_index(
+                                                                            part_list, st_x, st_y, st_z, density_peak_x[ihal], 
+                                                                            density_peak_y[ihal], density_peak_z[ihal], 
+                                                                            rad05[ihal], LL, num_particles[ihal]
+                                                                            )
                 if it_count > 0:
                     star_formation_masses[ihal] = halo_properties.star_formation(part_list, st_mass, st_age, cosmo_time*units.time_to_yr/1e9, dt)
 
@@ -815,18 +880,55 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 metallicities[ihal], 
                 metallicities_mass[ihal]) = halo_properties.avg_age_metallicity(part_list, st_age, st_met, st_mass, cosmo_time*units.time_to_yr/1e9)
 
+
+                # GAS, DM AND ST PARTICLES INSIDE RADIUS FOR POTENTIAL ENERGY
+                POT_RADIUS = FACTOR_R12_POT*rad05[ihal]
+
+                if RPS_FLAG or POT_ENERGY_FLAG:
+                    (gas_x_in, gas_y_in, gas_z_in, 
+                     gas_vx_in, gas_vy_in, gas_vz_in, 
+                     gas_mass_in, gas_temp_in, 
+                     dm_x_in, dm_y_in, dm_z_in, dm_mass_in, 
+                     st_x_in, st_y_in, st_z_in, st_mass_in, 
+                     st_oripa_in) = halo_gas.st_gas_dm_particles_inside(
+                                                                rete, L, NX, grid_data, 
+                                                                gas_data, masclet_dm_data, masclet_st_data, 
+                                                                st_kdtree, dm_kdtree,
+                                                                cx, cy, cz, POT_RADIUS, rho_B
+                                                                )
+
                 # RPS EFFECTS
                 if RPS_FLAG:
-                    rps_radius = 2*rad05[ihal] #RADIUS TO CALCULATE COLD/HOT BOUND/UNBOUND GAS
                     (
                         gas_masses[ihal], 
                         cold_bound_gas_fractions[ihal], 
                         cold_unbound_gas_masses[ihal], 
-                        hot_unbound_gas_masses[ihal]      ) = halo_gas.RPS(rete, L, NX, grid_data, gas_data, 
-                                                                        masclet_dm_data, masclet_st_data, cx, cy, cz, 
-                                                                        velocities_x[ihal], velocities_y[ihal], velocities_z[ihal], rps_radius, rho_B)
+                        hot_unbound_gas_masses[ihal]      ) = halo_gas.RPS( 
+                                                                            gas_x_in, gas_y_in, gas_z_in, 
+                                                                            gas_vx_in, gas_vy_in, gas_vz_in, 
+                                                                            gas_mass_in, gas_temp_in, 
+                                                                            dm_x_in, dm_y_in, dm_z_in, dm_mass_in, 
+                                                                            st_x_in, st_y_in, st_z_in, st_mass_in,
+                                                                            velocities_x[ihal], velocities_y[ihal], 
+                                                                            velocities_z[ihal], BRUTE_FORCE_LIM,
+                                                                            mass_dm_part    
+                                                                        )
+
+                # MOST BOUND PARTICLE --> POTENTIAL MINIMUM 
+                if POT_ENERGY_FLAG:
+                   ( most_bound_x[ihal], 
+                     most_bound_y[ihal], 
+                     most_bound_z[ihal], 
+                     most_bound_id[ihal] ) = halo_gas.most_bound_particle(
+                                                                          gas_x_in, gas_y_in, gas_z_in, gas_mass_in, 
+                                                                          dm_x_in, dm_y_in, dm_z_in, dm_mass_in, 
+                                                                          st_x_in, st_y_in, st_z_in, st_mass_in, 
+                                                                          st_oripa_in, BRUTE_FORCE_LIM, mass_dm_part
+                                                                          )
+
+
                 # SMBH
-                SMBH_masses[ihal] = halo_properties.halo_SMBH(cx, cy, cz, rad05[ihal], bh_x, bh_y, bh_z, bh_mass)
+                SMBH_masses[ihal] = halo_properties.halo_SMBH(cx, cy, cz, rad05[ihal], bh_x, bh_y, bh_z, bh_mass)         
 
             #end of loop over haloes
                     
@@ -938,19 +1040,26 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 ############################################################################################################
                 #Third step
                 ############################################################################################################
-                dm_x = masclet_dm_data[0]
-                dm_y = masclet_dm_data[1]
-                dm_z = masclet_dm_data[2]
                 dm_mass = masclet_dm_data[3]*units.mass_to_sun
-                @numba.njit(fastmath = True, parallel = True)
-                def DM_mass_inside_galaxy(ih):
-                    xcm = center_x[ih]
-                    ycm = center_y[ih]
-                    zcm = center_z[ih]
-                    return np.sum(dm_mass[np.sqrt((xcm-dm_x)**2 + (ycm-dm_y)**2 + (zcm-dm_z)**2) < FACTOR_R12_DM*rad05[ih]])
+
+                # @numba.njit(fastmath = True, parallel = True)
+                # def DM_mass_inside_galaxy(ih):
+                #     xcm = center_x[ih]
+                #     ycm = center_y[ih]
+                #     zcm = center_z[ih]
+                #     return np.sum(dm_mass[np.sqrt((xcm-dm_x)**2 + (ycm-dm_y)**2 + (zcm-dm_z)**2) < FACTOR_R12_DM*rad05[ih]])
+
+                # for ih in tqdm(range(num_halos)):
+                #     darkmatter_mass[ih] = DM_mass_inside_galaxy(ih)
 
                 for ih in tqdm(range(num_halos)):
-                    darkmatter_mass[ih] = DM_mass_inside_galaxy(ih)
+                    darkmatter_mass[ih] = np.sum(dm_mass[dm_kdtree.query_ball_point( [center_x[ih], 
+                                                                                      center_y[ih], 
+                                                                                      center_z[ih]], 
+                                                                                      FACTOR_R12_DM*rad05[ih],
+                                                                                      workers = NCORE)
+                                                                                     ]
+                                                                                     )
 
                 print('     Done')
                     
@@ -961,8 +1070,8 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
 
             if len(new_groups)>0:
                 print()
-                print(f'CHECK min, max in R_05: {np.min(rad05)*rete*1e3*units.length_to_mpc:.2f} {np.max(rad05)*rete*1e3*units.length_to_mpc:.2f}')
-                print(f'CHECK min, max in RMAX: {np.min(rmax)*rete*1e3*units.length_to_mpc:.2f} {np.max(rmax)*rete*1e3*units.length_to_mpc:.2f}')
+                print(f'CHECK min, max in R_05: {np.min(rad05)*1e3:.2f} {np.max(rad05)*1e3:.2f}')
+                print(f'CHECK min, max in RMAX: {np.min(rmax)*1e3:.2f} {np.max(rmax)*1e3:.2f}')
                 print(f'CHECK min, max in stellar mass: {np.min(masses):.2e} {np.max(masses):.2e}')
                 print(f'CHECK min, max in gas mass: {np.min(gas_masses):.2e} {np.max(gas_masses):.2e}')
                 if ASOHF_FLAG:
@@ -1140,6 +1249,10 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             asohf_mass = asohf_mass[argsort_part]
             asohf_Rvir = asohf_Rvir[argsort_part]
             darkmatter_mass = darkmatter_mass[argsort_part]
+            most_bound_x = most_bound_x[argsort_part]
+            most_bound_y = most_bound_y[argsort_part]
+            most_bound_z = most_bound_z[argsort_part]
+            most_bound_id = most_bound_id[argsort_part]
 
             ##########################################
             ##########################################
@@ -1506,6 +1619,16 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         halo['id'] = ih+1
         halo['partNum'] = num_particles[ih]
         halo['M'] = masses[ih]
+        halo['xcm'] = center_x[ih]*1e3 #kpc
+        halo['ycm'] = center_y[ih]*1e3
+        halo['zcm'] = center_z[ih]*1e3
+        halo['xpeak'] = density_peak_x[ih]*1e3
+        halo['ypeak'] = density_peak_y[ih]*1e3
+        halo['zpeak'] = density_peak_z[ih]*1e3
+        halo['xbound'] = most_bound_x[ih]*1e3
+        halo['ybound'] = most_bound_y[ih]*1e3
+        halo['zbound'] = most_bound_z[ih]*1e3
+        halo['id_bound'] = most_bound_id[ih]
         halo['Mgas'] = gas_masses[ih]
         halo['fcold'] = cold_bound_gas_fractions[ih]
         halo['Mcoldgas'] = cold_unbound_gas_masses[ih]
@@ -1523,9 +1646,6 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         halo['sigma_v_1dy'] = sig_1D_y[ih]
         halo['sigma_v_1dz'] = sig_1D_z[ih]
         halo['L'] = specific_angular_momentum[ih]*1e3
-        halo['xcm'] = density_peak_x[ih]*1e3 #kpc
-        halo['ycm'] = density_peak_y[ih]*1e3
-        halo['zcm'] = density_peak_z[ih]*1e3
         halo['vx'] = velocities_x[ih]
         halo['vy'] = velocities_y[ih]
         halo['vz'] = velocities_z[ih]
