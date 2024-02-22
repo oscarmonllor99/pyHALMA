@@ -7,7 +7,7 @@ Then, it calculates for the physical stellar haloes (galaxies) many quantities o
 surface brightness in SDSS filters. On top of that, files containing the images (surface brightness and luminosity per pixel in each band) are produced.
 
 In order to be able to "give" light to the stellar particles, we use the E-MILES public library (available at: http://research.iac.es/proyecto/miles/pages/spectral-energy-distributions-seds/e-miles.php)
-which assumes some type of IMF, and according to metallicity, mass and age, produces a given spectral distribution. Since this part is computationally expensive, it is implemented in Fortran with OpenOMP
+which assumes some type of IMF, and according to metallicity, mass and age, produces a given spectral distribution. Since this part is computationally expensive, it is implemented in Fortran with OpenMP
 parallel directives. We use the AB system for magnitudes and the SDSS passbands, as it is usual in galactic astronomy.
 
 It is always interesting to know the properties of the dark matter haloes where the stellar haloes are living. Thus, by means of an ASOHF catalogue (see https://github.com/dvallesp/ASOHF), we search the corresponding dark matter halo for every galaxy. 
