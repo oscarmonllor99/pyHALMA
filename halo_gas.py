@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from numba import njit, prange, set_num_threads, get_num_threads
+from scipy.spatial import KDTree
 import numba
 import sys
 import time
@@ -145,23 +146,22 @@ def AMRgrid_to_particles(L, ncoarse, grid_data, gas_data, Rrps, cx, cy, cz, rho_
 
 
 
-@njit(numba.float64[:](numba.float64[:], numba.float64[:], numba.float64[:], numba.float64[:], numba.float64[:], numba.float64[:], numba.float64[:]),
-      parallel=True, fastmath=True, cache=True
-      ) 
-def brute_force_binding_energy(total_mass, total_x, total_y, total_z, gas_x, gas_y, gas_z):
-    partNum_gas = len(gas_x)
-    binding_energy = np.zeros(partNum_gas)
-    for ip in range(partNum_gas):
-        r = np.sqrt((total_x - gas_x[ip])**2 + (total_y - gas_y[ip])**2 + (total_z - gas_z[ip])**2)
-        reduction = 0.
-        for ip2 in prange(len(r)):
-            if r[ip2] > 0.:
-               reduction += total_mass[ip2]/r[ip2]
+# @njit(numba.float64[:](numba.float64[:], numba.float64[:], numba.float64[:], numba.float64[:], numba.float64[:], numba.float64[:], numba.float64[:]),
+#       parallel=True, fastmath=True, cache=True
+#       ) 
+# def brute_force_binding_energy(total_mass, total_x, total_y, total_z, gas_x, gas_y, gas_z):
+#     partNum_gas = len(gas_x)
+#     binding_energy = np.zeros(partNum_gas)
+#     for ip in range(partNum_gas):
+#         r = np.sqrt((total_x - gas_x[ip])**2 + (total_y - gas_y[ip])**2 + (total_z - gas_z[ip])**2)
+#         reduction = 0.
+#         for ip2 in prange(len(r)):
+#             if r[ip2] > 0.:
+#                reduction += total_mass[ip2]/r[ip2]
         
-        binding_energy[ip] = reduction
+#         binding_energy[ip] = reduction
         
-    return binding_energy
-
+#     return binding_energy
 
 
 def brute_force_binding_energy_fortran(total_mass, total_x, total_y, total_z, test_x, test_y, test_z):
@@ -182,30 +182,113 @@ def brute_force_binding_energy_fortran(total_mass, total_x, total_y, total_z, te
     
     # call the fortran routine
     ncores_f90 = np.int32(get_num_threads())
-
-    t0 = time.time()
     binding_energy = particle.particle.brute_force_binding_energy(ncores_f90, ntotal_f90, 
                                                                   total_mass_f90, total_x_f90, 
                                                                   total_y_f90, total_z_f90,
                                                                   ntest_f90, test_x_f90, 
                                                                   test_y_f90, test_z_f90)
-    t1 = time.time()
-    # print('CPU', t1-t0, 's')
-
-    # binding_energy = particle.particle.gpu_brute_force_binding_energy(ntotal_f90,
-    #                                                                 total_mass_f90, total_x_f90,
-    #                                                                 total_y_f90, total_z_f90,
-    #                                                                 ntest_f90, test_x_f90,
-    #                                                                 test_y_f90, test_z_f90)
-    # t2 = time.time()
-    # print('GPU', t2-t1, 's')
-
-
     return binding_energy
 
 
 
-def RPS(rete, L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data, cx, cy, cz, vx, vy, vz, Rrps, rho_B):
+def serial_brute_force_binding_energy_fortran(total_mass, total_x, total_y, total_z, test_x, test_y, test_z):
+
+    # match the types with the fortran routine
+    ntotal_f90 = np.int32(len(total_mass))    
+    ntest_f90 = np.int32(len(test_x))
+    if ntest_f90 == 0:
+        return np.array([])
+    
+    total_mass_f90 = np.float32(total_mass)
+    total_x_f90 = np.float32(total_x)
+    total_y_f90 = np.float32(total_y)
+    total_z_f90 = np.float32(total_z)
+    test_x_f90 = np.float32(test_x)
+    test_y_f90 = np.float32(test_y)
+    test_z_f90 = np.float32(test_z)
+    
+    # call the fortran routine
+    binding_energy = particle.particle.serial_brute_force_binding_energy(
+                        ntotal_f90, total_mass_f90, total_x_f90, 
+                        total_y_f90, total_z_f90,
+                        ntest_f90, test_x_f90, 
+                        test_y_f90, test_z_f90
+                        )
+    
+    return binding_energy
+
+
+@njit(fastmath=True, parallel = True)
+def parallel_inside(array_x, array_y, array_z, R, cx, cy, cz):
+    return np.sqrt((array_x-cx)**2 + (array_y-cy)**2 + (array_z-cz)**2) < R
+
+
+def st_gas_dm_particles_inside(rete, L, ncoarse, grid_data, 
+                        gas_data, masclet_dm_data, masclet_st_data,
+                        st_kdtree, dm_kdtree, 
+                        cx, cy, cz, R, rho_B):
+    
+    ncores = get_num_threads()
+    
+    #####################  GAS AMR TO GAS PARTICLES #####################
+    (gas_x, gas_y, gas_z, 
+     gas_vx, gas_vy, gas_vz, 
+     gas_mass, gas_temp) = AMRgrid_to_particles(L, ncoarse, grid_data, 
+                                                gas_data, R, cx, cy, cz, rho_B)
+    # CHECK THAT THE GAS PARTICLES INSIDE R05
+    inside_Rrps = parallel_inside(gas_x, gas_y, gas_z, R, cx, cy, cz)
+    gas_x = gas_x[inside_Rrps]
+    gas_y = gas_y[inside_Rrps]
+    gas_z = gas_z[inside_Rrps]
+    gas_vx = gas_vx[inside_Rrps]
+    gas_vy = gas_vy[inside_Rrps]
+    gas_vz = gas_vz[inside_Rrps]
+    gas_mass = gas_mass[inside_Rrps]
+    gas_temp = gas_temp[inside_Rrps]
+    # FROM COMOVING VOLUME TO PHYSICAL VOLUME
+    gas_mass *= rete**3
+
+    #####################  DM PARTICLES INSIDE #####################
+    dm_x = masclet_dm_data[0]
+    dm_y = masclet_dm_data[1]
+    dm_z = masclet_dm_data[2]
+    dm_mass = masclet_dm_data[3]*units.mass_to_sun #in Msun
+    # Search for the DM particles inside R05
+    #inside_Rrps = parallel_inside(dm_x, dm_y, dm_z, R, cx, cy, cz)
+    inside_Rrps = dm_kdtree.query_ball_point([cx + L/2, cy + L/2, cz + L/2], R, workers=ncores)
+    dm_x = dm_x[inside_Rrps]
+    dm_y = dm_y[inside_Rrps]
+    dm_z = dm_z[inside_Rrps]
+    dm_mass = dm_mass[inside_Rrps]
+
+    #####################  STARS PARTICLES INSIDE #####################
+    st_x = masclet_st_data[0]
+    st_y = masclet_st_data[1]
+    st_z = masclet_st_data[2]
+    st_mass = masclet_st_data[6]*units.mass_to_sun #in Msun
+    st_oripa = masclet_st_data[9]
+    # Search for the star particles inside R05
+    # inside_Rrps = parallel_inside(st_x, st_y, st_z, R, cx, cy, cz)
+    inside_Rrps = st_kdtree.query_ball_point([cx + L/2, cy + L/2, cz + L/2], R, workers=ncores)
+    st_x = st_x[inside_Rrps]
+    st_y = st_y[inside_Rrps]
+    st_z = st_z[inside_Rrps]
+    st_mass = st_mass[inside_Rrps]
+    st_oripa = st_oripa[inside_Rrps]
+
+    return (gas_x, gas_y, gas_z, gas_vx, gas_vy, gas_vz, gas_mass, gas_temp, 
+            dm_x, dm_y, dm_z, dm_mass, st_x, st_y, st_z, st_mass, st_oripa)
+
+
+
+
+
+
+
+def RPS(gas_x, gas_y, gas_z, gas_vx, gas_vy, gas_vz, gas_mass, gas_temp, 
+        dm_x, dm_y, dm_z, dm_mass, st_x, st_y, st_z, st_mass, vx, vy, vz, BRUTE_FORCE_LIM,
+        mass_dm_part):
+    
     ##################################################################################
     # This routine aims to calculate the bound/unbound mass gas fraction of each halo
     # For that, we have to pass from the AMR grid to a particle representation of the gas
@@ -215,65 +298,131 @@ def RPS(rete, L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data,
     # We can then calculate the bound/unbound mass gas fraction of each halo
     ##################################################################################
 
-    #####################  LOAD PARTICLE DATA
-    # DM
-    dm_x = masclet_dm_data[0]
-    dm_y = masclet_dm_data[1]
-    dm_z = masclet_dm_data[2]
-    dm_mass = masclet_dm_data[3]*units.mass_to_sun #in Msun
-    # Search for the DM particles inside R05
-    dm_gcd = np.sqrt((dm_x-cx)**2 + (dm_y-cy)**2 + (dm_z-cz)**2) # galaxy-centric distance
-    inside_Rrps = dm_gcd < Rrps
-    dm_x = dm_x[inside_Rrps]
-    dm_y = dm_y[inside_Rrps]
-    dm_z = dm_z[inside_Rrps]
-    dm_mass = dm_mass[inside_Rrps]
-
-    # STARS
-    st_x = masclet_st_data[0]
-    st_y = masclet_st_data[1]
-    st_z = masclet_st_data[2]
-    st_mass = masclet_st_data[6]*units.mass_to_sun #in Msun
-    # Search for the star particles inside R05
-    st_gcd = np.sqrt((st_x-cx)**2 + (st_y-cy)**2 + (st_z-cz)**2) # galaxy-centric distance
-    inside_Rrps = st_gcd < Rrps
-    st_x = st_x[inside_Rrps]
-    st_y = st_y[inside_Rrps]
-    st_z = st_z[inside_Rrps]
-    st_mass = st_mass[inside_Rrps]
-    #####################
-
-    #####################  GAS AMR TO GAS PARTICLES
-    gas_x, gas_y, gas_z, gas_vx, gas_vy, gas_vz, gas_mass, gas_temp = AMRgrid_to_particles(L, ncoarse, grid_data, gas_data, Rrps, cx, cy, cz, rho_B)
-
-    # CHECK THAT THE GAS PARTICLES ARE INSIDE R05
-    gas_gcd = np.sqrt((gas_x-cx)**2 + (gas_y-cy)**2 + (gas_z-cz)**2) # galaxy-centric distance
-    inside_Rrps = gas_gcd < Rrps
-    gas_x = gas_x[inside_Rrps]
-    gas_y = gas_y[inside_Rrps]
-    gas_z = gas_z[inside_Rrps]
-    gas_vx = gas_vx[inside_Rrps]
-    gas_vy = gas_vy[inside_Rrps]
-    gas_vz = gas_vz[inside_Rrps]
-    gas_mass = gas_mass[inside_Rrps]
-    gas_temp = gas_temp[inside_Rrps]
-    
-    # FROM COMOVING VOLUME TO PHYSICAL VOLUME
-    gas_mass *= rete**3
-
+    # NUMBER OF GAS PARTICLES
+    ngas = len(gas_x)
+    # RESULT
+    binding_energy = np.zeros((ngas,), dtype=np.float32)
     #####################  
 
+    ##########################################
+    # POTENTIAL ENERGY DUE GAS ITSELF
+    if ngas > BRUTE_FORCE_LIM:
+        nsample_gas = np.max([BRUTE_FORCE_LIM, int(0.01*ngas)])
+        gas_part_list = np.arange(ngas)
+        sample_gas = np.random.choice(gas_part_list, nsample_gas, replace=True)
+        gas_x_sample = gas_x[sample_gas]
+        gas_y_sample = gas_y[sample_gas]
+        gas_z_sample = gas_z[sample_gas]
+        gas_mass_sample = gas_mass[sample_gas]
+        
+        binding_energy_gas = brute_force_binding_energy_fortran(
+                            gas_mass_sample, gas_x_sample, gas_y_sample, gas_z_sample, 
+                            gas_x, gas_y, gas_z
+                            )
+        
+        binding_energy_gas = binding_energy_gas * ngas / nsample_gas
+        binding_energy += binding_energy_gas
+        
+    elif ngas > 0:
+        binding_energy_gas = brute_force_binding_energy_fortran(
+                            gas_mass, gas_x, gas_y, gas_z, gas_x, gas_y, gas_z
+                            )
+        binding_energy += binding_energy_gas
+
+    ##########################################
+
+    ##########################################
+    # POTENTIAL ENERGY DUE TO DARK MATTER
+    #TAKE INTO ACCOUNT ALWAYS ALL l<=1 PARTICLES, AS THEY ARE
+    #THE MOST MASSIVE ONES
+    mass_l0 = mass_dm_part
+    mass_l1 = mass_dm_part/8
+    mass_l2 = mass_dm_part/8**2
+    mass_l3 = mass_dm_part/8**3
+    mass_l4 = mass_dm_part/8**4
+
+    # l = 0 and l = 1
+    condition_l01 = dm_mass >= 0.9*mass_l1
+    dm_x_mandatory = dm_x[condition_l01]
+    dm_y_mandatory = dm_y[condition_l01]
+    dm_z_mandatory = dm_z[condition_l01]
+    dm_mass_mandatory = dm_mass[condition_l01]
+
+    if np.count_nonzero(condition_l01) > 0:
+        binding_energy_dm = brute_force_binding_energy_fortran(
+                                dm_mass_mandatory, dm_x_mandatory, 
+                                dm_y_mandatory, dm_z_mandatory, gas_x, gas_y, gas_z
+                                )
+        
+        binding_energy += binding_energy_dm
+
+    # l = 2, l = 3 and l = 4
+    condition_other = np.logical_not(condition_l01)
+    dm_x_other = dm_x[condition_other]
+    dm_y_other = dm_y[condition_other]
+    dm_z_other = dm_z[condition_other]
+    dm_mass_other = dm_mass[condition_other]
+
+    #Sampling the DM particles with replacement
+    ndm_other = len(dm_x_other)
+    if ndm_other > BRUTE_FORCE_LIM:
+        nsample_dm = np.max([BRUTE_FORCE_LIM, int(0.01*ndm_other)])
+        dm_part_list = np.arange(ndm_other)
+        sample_dm = np.random.choice(dm_part_list, nsample_dm, replace=True)
+        dm_x_other = dm_x_other[sample_dm]
+        dm_y_other = dm_y_other[sample_dm]
+        dm_z_other = dm_z_other[sample_dm]
+        dm_mass_other = dm_mass_other[sample_dm]
+        
+        binding_energy_dm = brute_force_binding_energy_fortran(
+                                dm_mass_other, dm_x_other,
+                                dm_y_other, dm_z_other, gas_x, gas_y, gas_z
+                                )
+            
+        binding_energy_dm = binding_energy_dm * ndm_other / nsample_dm
+        binding_energy += binding_energy_dm 
+
+    elif ndm_other > 0:
+        binding_energy_dm = brute_force_binding_energy_fortran(
+                            dm_mass_other, dm_x_other, 
+                            dm_y_other, dm_z_other, gas_x, gas_y, gas_z
+                            )
+        
+        binding_energy += binding_energy_dm
+
+    ################################################
+
+    ##########################################
+    # POTENTIAL ENERGY DUE TO STARS
+        
+    #Sampling the star particles with replacement
+    nst = len(st_x)
+    if nst > BRUTE_FORCE_LIM:
+        nsample_st = np.max([BRUTE_FORCE_LIM, int(0.01*nst)])
+        st_part_list = np.arange(nst)
+        sample_st = np.random.choice(st_part_list, nsample_st, replace=True)
+        st_x = st_x[sample_st]
+        st_y = st_y[sample_st]
+        st_z = st_z[sample_st]
+        st_mass = st_mass[sample_st]
+
+        binding_energy_st = brute_force_binding_energy_fortran(
+                                st_mass, st_x, st_y, st_z, gas_x, gas_y, gas_z,
+                                )
+            
+        binding_energy_st = binding_energy_st * nst / nsample_st
+        binding_energy += binding_energy_st
+
+    elif nst > 0:
+        binding_energy_st = brute_force_binding_energy_fortran(
+                            st_mass, st_x, st_y, st_z, gas_x, gas_y, gas_z
+                            )
+        binding_energy += binding_energy_st
+    ##########################################
+
+
+
     #####################  CALCULATE TOTAL ENERGY OF EACH GAS PARTICLE
-
-    # ARRAYS CONTAINING ALL PARTICLES POSITIONS AND MASSES
-    total_x = np.concatenate((gas_x, st_x, dm_x))
-    total_y = np.concatenate((gas_y, st_y, dm_y))
-    total_z = np.concatenate((gas_z, st_z, dm_z))
-    total_mass = np.concatenate((gas_mass, st_mass, dm_mass))
-
-    # CALCULATE BINDING ENERGY OF EACH GAS PARTICLE
-    binding_energy = brute_force_binding_energy_fortran(total_mass, total_x, total_y, total_z, 
-                                                        gas_x, gas_y, gas_z)
     binding_energy = - binding_energy # binding energy is negative
 
     # Now the variable binding_energy is in units of Msun/mpc, we need to convert it to km^2/s^2
@@ -295,6 +444,7 @@ def RPS(rete, L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data,
     # BOUND AND UNBOUND GAS PARTICLES
     unbound = total_energy > 0.
     bound = total_energy <= 0.
+
     # COLD AND HOT GAS PARTICLES
     cold = gas_temp < 5*1e4
     hot = gas_temp >= 5*1e4
@@ -311,3 +461,144 @@ def RPS(rete, L, ncoarse, grid_data, gas_data, masclet_dm_data, masclet_st_data,
 
     return total_gas_mass, frac_cold_gas_mass, unbound_cold_gas_mass, unbound_hot_gas_mass
 
+
+
+
+
+def most_bound_particle(gas_x, gas_y, gas_z, gas_mass, dm_x, dm_y, dm_z, dm_mass, 
+                        st_x, st_y, st_z, st_mass, st_oripa, BRUTE_FORCE_LIM, mass_dm_part):
+    
+    ##################################################################################
+    ##################################################################################
+    # NUMBER OF STAR PARTICLES
+    nst = len(st_x)
+    # RESULT
+    binding_energy = np.zeros((nst,), dtype=np.float32)
+    #####################  
+
+    ##########################################
+    # POTENTIAL ENERGY DUE GAS
+    ngas = len(gas_x)
+    if ngas > BRUTE_FORCE_LIM:
+        nsample_gas = np.max([BRUTE_FORCE_LIM, int(0.01*ngas)])
+        gas_part_list = np.arange(ngas)
+        sample_gas = np.random.choice(gas_part_list, nsample_gas, replace=True)
+        gas_x_sample = gas_x[sample_gas]
+        gas_y_sample = gas_y[sample_gas]
+        gas_z_sample = gas_z[sample_gas]
+        gas_mass_sample = gas_mass[sample_gas]
+        
+        binding_energy_gas = brute_force_binding_energy_fortran(
+                            gas_mass_sample, gas_x_sample, gas_y_sample, gas_z_sample, 
+                            st_x, st_y, st_z
+                            )
+        
+        binding_energy_gas = binding_energy_gas * ngas / nsample_gas
+        binding_energy += binding_energy_gas
+        
+    elif ngas > 0:
+        binding_energy_gas = brute_force_binding_energy_fortran(
+                            gas_mass, gas_x, gas_y, gas_z, st_x, st_y, st_z
+                            )
+        binding_energy += binding_energy_gas
+
+    ##########################################
+
+    ##########################################
+    # POTENTIAL ENERGY DUE TO DARK MATTER
+    #TAKE INTO ACCOUNT ALWAYS ALL l<=1 PARTICLES, AS THEY ARE
+    #THE MOST MASSIVE ONES
+    mass_l0 = mass_dm_part
+    mass_l1 = mass_dm_part/8
+    mass_l2 = mass_dm_part/8**2
+    mass_l3 = mass_dm_part/8**3
+    mass_l4 = mass_dm_part/8**4
+
+    # l = 0 and l = 1
+    condition_l01 = dm_mass >= 0.9*mass_l1
+    dm_x_mandatory = dm_x[condition_l01]
+    dm_y_mandatory = dm_y[condition_l01]
+    dm_z_mandatory = dm_z[condition_l01]
+    dm_mass_mandatory = dm_mass[condition_l01]
+
+    if np.count_nonzero(condition_l01) > 0:
+        binding_energy_dm = brute_force_binding_energy_fortran(
+                                dm_mass_mandatory, dm_x_mandatory, 
+                                dm_y_mandatory, dm_z_mandatory, st_x, st_y, st_z
+                                )
+        
+        binding_energy += binding_energy_dm
+
+    # l = 2, l = 3 and l = 4
+    condition_other = np.logical_not(condition_l01)
+    dm_x_other = dm_x[condition_other]
+    dm_y_other = dm_y[condition_other]
+    dm_z_other = dm_z[condition_other]
+    dm_mass_other = dm_mass[condition_other]
+
+    #Sampling the DM particles with replacement
+    ndm_other = len(dm_x_other)
+    if ndm_other > BRUTE_FORCE_LIM:
+        nsample_dm = np.max([BRUTE_FORCE_LIM, int(0.01*ndm_other)])
+        dm_part_list = np.arange(ndm_other)
+        sample_dm = np.random.choice(dm_part_list, nsample_dm, replace=True)
+        dm_x_other = dm_x_other[sample_dm]
+        dm_y_other = dm_y_other[sample_dm]
+        dm_z_other = dm_z_other[sample_dm]
+        dm_mass_other = dm_mass_other[sample_dm]
+        
+        binding_energy_dm = brute_force_binding_energy_fortran(
+                                dm_mass_other, dm_x_other,
+                                dm_y_other, dm_z_other, st_x, st_y, st_z
+                                )
+            
+        binding_energy_dm = binding_energy_dm * ndm_other / nsample_dm
+        binding_energy += binding_energy_dm 
+
+    elif ndm_other > 0:
+        binding_energy_dm = brute_force_binding_energy_fortran(
+                            dm_mass_other, dm_x_other, 
+                            dm_y_other, dm_z_other, st_x, st_y, st_z
+                            )
+        
+        binding_energy += binding_energy_dm
+
+    ################################################
+
+    ##########################################
+    # POTENTIAL ENERGY DUE TO STARS
+        
+    #Sampling the star particles with replacement
+    if nst > BRUTE_FORCE_LIM:
+        nsample_st = np.max([BRUTE_FORCE_LIM, int(0.01*nst)])
+        st_part_list = np.arange(nst)
+        sample_st = np.random.choice(st_part_list, nsample_st, replace=True)
+        st_x_sample = st_x[sample_st]
+        st_y_sample = st_y[sample_st]
+        st_z_sample = st_z[sample_st]
+        st_mass_sample = st_mass[sample_st]
+
+        binding_energy_st = brute_force_binding_energy_fortran(
+                                st_mass_sample, st_x_sample, st_y_sample, st_z_sample, st_x, st_y, st_z,
+                                )
+            
+        binding_energy_st = binding_energy_st * nst / nsample_st
+        binding_energy += binding_energy_st
+
+    elif nst > 0:
+        binding_energy_st = brute_force_binding_energy_fortran(
+                            st_mass, st_x, st_y, st_z, st_x, st_y, st_z
+                            )
+        binding_energy += binding_energy_st
+    ##########################################
+
+
+
+    #####################  CALCULATE TOTAL ENERGY OF EACH GAS PARTICLE
+        
+    binding_energy = - binding_energy # binding energy is negative
+
+    #Most bound stellar particle is the one with the most negative binding energy
+    most_bound_particle = np.argmin(binding_energy)
+    
+    return st_x[most_bound_particle], st_y[most_bound_particle], st_z[most_bound_particle], st_oripa[most_bound_particle]

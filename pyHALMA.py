@@ -13,7 +13,6 @@
 
 import time
 import numpy as np
-import pyfof
 import sys
 import os
 import warnings
@@ -53,6 +52,10 @@ with open('pyHALMA.dat', 'r') as f:
     LL /= 1e3 #to Mpc
     f.readline()
     CALCULATE_LL_FLAG = bool(int(f.readline()))
+    f.readline()
+    PYFOF_FLAG = bool(int(f.readline()))
+    f.readline()
+    PARALLEL_FOF = bool(int(f.readline()))
     f.readline()
     MINP, =  np.array(f.readline().split()[0].split(','), dtype = np.int32)
     f.readline()
@@ -253,6 +256,14 @@ ASOHF_OUTPUT = 'asohf_results'
 SIMU_MASCLET = 'simu_masclet'
 ##############################################
 
+##############################################
+# IMPORT PYFOF IF CHOSEN
+##############################################
+if PYFOF_FLAG:
+    import pyfof
+##############################################
+
+
 
 ##################################
 # SETTING UP THE NUMBER OF CORES #
@@ -452,41 +463,64 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
     bh_z = masclet_st_data[12]
     bh_mass = masclet_st_data[16]*units.mass_to_sun #in Msun
 
-    data = np.array((st_x, st_y, st_z)).T
-    data = data.astype(np.float64)
-    if len(data) > 0: #THERE ARE STAR PARTICLES
+    if st_x.shape[0] > 0: #THERE ARE STAR PARTICLES
+
+        ##############################################
+        # BUILD KD-TREE FOR STAR CALCULATIONS
+        ##############################################
+        data = np.array((st_x, st_y, st_z)).T
+        data = data.astype(np.float64)
+        st_kdtree = KDTree(data)
+        ##############################################
+        
         print()
         print(f'Number of star particles: {len(st_x):.2e}', )
-
-
-        ##############################################
-        print('     building stellar KDtree')
-        t0 = time.time()
-        data_st = data + L/2 # shift to 0, L
-        data_st[data_st >= L] = data_st[data_st >= L] - L # periodic boundary conditions
-        st_kdtree = KDTree(data_st, boxsize=np.array([L,L,L]), leafsize = 64)
-        print('     time to build STELLAR kdtree (sec):', time.time()-t0)
-        ##############################################
 
         #APPLY FOF
         print()
         print('----------> FoF begins <--------')
         print()
+        if PYFOF_FLAG:
+            print('     PYFOF ACTIVATED')
+            print()
+            if PARALLEL_FOF:
+                print('     PARALLEL FoF ACTIVATED')
+                print()
+                t0 = time.time()
+                groups = fof.pyfof_friends_of_friends_parallel(st_x, st_y, st_z, 
+                                                               LL, L, MINP, st_mass)
+                groups = np.array(groups, dtype=object)
+                print('     time in FoF:', time.time()-t0)
 
-        t0 = time.time()
-        groups = fof.friends_of_friends_parallel(st_x, st_y, st_z, LL, L, MINP)
-        groups = np.array(groups, dtype=object)
-        print('     my implementation:', time.time()-t0)
+            else:
+                t0 = time.time()
+                groups = fof.pyfof_friends_of_friends_serial(st_x, st_y, st_z, LL)
+                groups = np.array(groups, dtype=object)
+                print('     time in FoF:', time.time()-t0)
 
+        else:
+            print('     INTERNAL FoF ACTIVATED')
+            print()
+            if PARALLEL_FOF:
+                print('     PARALLEL FoF ACTIVATED')
+                print()
+                t0 = time.time()
+                groups = fof.friends_of_friends_parallel(st_x, st_y, st_z, LL, L, MINP, st_mass)
+                groups = np.array(groups, dtype=object)
+                print('     time in FoF:', time.time()-t0)
+            
+            else:
+                t0 = time.time()
+                groups = fof.friends_of_friends_serial(st_x, st_y, st_z, LL)
+                groups = np.array(groups, dtype=object) 
+                print('     time in FoF:', time.time()-t0)     
 
-        # t1 = time.time()
-        # groups = pyfof.friends_of_friends(data = data, linking_length = LL)
-        # groups = np.array(groups, dtype=object)
-        # print('     pyfof:', time.time()-t1)
 
         #CLEAN THOSE HALOES with npart < minp
         groups = groups[good_groups(groups, MINP)]
+        print()
         print(len(groups),'haloes found')
+        print(np.sum([len(groups[ihal]) for ihal in range(len(groups))]), 'particles in haloes')
         print()
 
         if len(groups) > 0: #THERE ARE HALOES
@@ -570,6 +604,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 ##############################################
                 print()
 
+
             ###########################################
             ###########################################
             #### SUBSTRUCTURE IDENTIFICATION BLOCK ####
@@ -589,11 +624,17 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                         #Half mass radius
                         r12 = halo_properties.half_mass_radius(cx, cy, cz, mass, part_list, st_x, st_y, st_z, st_mass)
                         #Sub FoF
-                        data_sub = np.vstack((st_x[part_list], st_y[part_list], st_z[part_list])).T
-                        data_sub = data_sub.astype(np.float64)
-                        sub_groups = pyfof.friends_of_friends(data = data_sub, linking_length = sub_LL)
-                        sub_groups = np.array(sub_groups, dtype=object)
-                        sub_groups = sub_groups[good_groups(sub_groups, MINP_SUB)] 
+                        if PYFOF_FLAG:
+                            sub_groups = pyfof.friends_of_friends(data = np.array((st_x[part_list], 
+                                                                                   st_y[part_list], 
+                                                                                   st_z[part_list])).T.astype(np.float64), 
+                                                                                   linking_length = sub_LL)
+                            sub_groups = np.array(sub_groups, dtype=object)
+                            sub_groups = sub_groups[good_groups(sub_groups, MINP_SUB)]
+                        else:
+                            sub_groups = fof.friends_of_friends_serial(st_x[part_list],  st_y[part_list], st_z[part_list], sub_LL)
+                            sub_groups = np.array(sub_groups, dtype=object)
+                            sub_groups = sub_groups[good_groups(sub_groups, MINP_SUB)] 
 
                         for group in sub_groups:
                             part_fraction = len(group)/len(part_list)
@@ -636,6 +677,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 print()
             ###########################################
             ###########################################
+
 
 
             ###########################################
@@ -885,6 +927,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 POT_RADIUS = FACTOR_R12_POT*rad05[ihal]
 
                 if RPS_FLAG or POT_ENERGY_FLAG:
+
                     (gas_x_in, gas_y_in, gas_z_in, 
                      gas_vx_in, gas_vy_in, gas_vz_in, 
                      gas_mass_in, gas_temp_in, 
