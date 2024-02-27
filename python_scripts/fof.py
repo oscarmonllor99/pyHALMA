@@ -7,7 +7,8 @@ from numba import get_num_threads
 from multiprocessing import Pool
 from tqdm import tqdm
 from scipy.spatial import KDTree
-import halo_properties as hp
+#################################################
+from python_scripts import halo_properties as hp
 
 
 

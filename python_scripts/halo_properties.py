@@ -1,13 +1,11 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from numba import njit, prange, get_num_threads
-import sys
-from scipy.ndimage import gaussian_filter
 from scipy.optimize import curve_fit
 from sklearn.metrics import r2_score
 from masclet_framework import units, particles
-import particle
-import halo_gas
+############################################
+from fortran_modules import particle
+from python_scripts import halo_gas
 
 @njit(parallel = True)
 def total_mass(part_list, st_mass):

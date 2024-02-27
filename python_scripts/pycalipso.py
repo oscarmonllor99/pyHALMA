@@ -1,14 +1,13 @@
 #  Created on Tuesday Oct 4 11:00:10 2022
 #  @author: ÓSCAR MONLLOR BERBEGAL
-import sys
 from numba import njit, prange, get_num_threads
 import numpy as np
 from astropy.io import fits
 from math import log10
-from scipy.interpolate import interp1d
-import matplotlib.pyplot as plt
-import calipso
 from masclet_framework import units
+############################################
+from fortran_modules import calipso
+
 
 ### AVISOS PARA ENTENDER EL CÓDIGO:
 # mag no es una magnitud. Al sumarle cfact: fmag = mag + cfact lo convertimos en una magnitud

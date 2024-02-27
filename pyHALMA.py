@@ -244,13 +244,14 @@ def write_catalogue(haloes, iteration_data, PYHALMA_OUTPUT):
 ########## ########## ########## ########## ########## 
 ########## ########## ########## ########## ########## 
 
-##############################################
-# SETTING UP masclet_framework
+#########################################################
+# SETTING UP masclet_framework and import scripts/modules
+#########################################################
 sys.path.append(PATH_MASCLET_FRAMEWORK)
-sys.path.append(os.path.abspath(os.getcwd()) + '/python_scripts')
-sys.path.append(os.path.abspath(os.getcwd()) + '/fortran_modules')
 from masclet_framework import read_masclet, units, read_asohf
-import halo_properties, halo_gas, pycalipso, fof
+from python_scripts import halo_properties, halo_gas, pycalipso, fof
+#########################################################
+
 ##############################################
 # SETTING UP FOLDERS 
 ##############################################
@@ -265,10 +266,8 @@ if PYFOF_FLAG:
     import pyfof
 ##############################################
 
-
-
 ##################################
-# SETTING UP THE NUMBER OF CORES #
+# SETTING UP NUMBER OF CORES 
 ##################################
 if __name__ == '__main__':
     numba.set_num_threads(NCORE)

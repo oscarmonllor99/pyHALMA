@@ -1,12 +1,8 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from numba import njit, prange, set_num_threads, get_num_threads
-from scipy.spatial import KDTree
-import numba
-import sys
-import time
+from numba import njit, get_num_threads
 from masclet_framework import units, tools
-import particle
+############################################
+from fortran_modules import particle
         
 
 @njit
