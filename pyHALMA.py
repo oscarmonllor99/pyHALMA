@@ -18,12 +18,13 @@ import os
 import json
 import warnings
 warnings.filterwarnings('ignore')
-from multiprocessing import Pool
+import multiprocessing
 import numba
 from tqdm import tqdm
 from math import acos
 from scipy.interpolate import RegularGridInterpolator
 from scipy.spatial import KDTree
+
 
 ########## ########## ########## ########## ########## 
 ########## INPUT PARAMETERS FROM pyHALMA.dat #########
@@ -1075,7 +1076,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
 
                     return ih_dm_match
                 
-                with Pool(NCORE) as p:
+                with multiprocessing.get_context('fork').Pool(NCORE) as p:
                     results_DM_halo_finder = list(tqdm(p.imap(main_DM_halo_finder, haloes_without_match), total=len(haloes_without_match)))
 
                 for ih2, result in enumerate(results_DM_halo_finder):
@@ -1148,7 +1149,6 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             n_mergers = np.zeros(num_halos, dtype=np.int32)
             merger_type = np.zeros(num_halos, dtype=np.int32)
 
-
             ##########################################
             ###### PARALLEL VERSION #################
             def main_progenitors_finder(ih):
@@ -1193,7 +1193,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
 
                 return pro1_ih, pro2_ih, nmergs, mer_type_ih
             
-            with Pool(NCORE) as p:
+            with multiprocessing.get_context('fork').Pool(NCORE) as p:
                 results_mergers = list(tqdm(p.imap(main_progenitors_finder, range(num_halos)), total=num_halos))
 
             for ih, result in enumerate(results_mergers):

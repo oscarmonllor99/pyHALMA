@@ -4,8 +4,7 @@
 
 import numpy as np
 from numba import get_num_threads
-from multiprocessing import Pool
-from tqdm import tqdm
+import multiprocessing
 from scipy.spatial import KDTree
 #################################################
 from python_scripts import halo_properties as hp
@@ -151,7 +150,7 @@ def friends_of_friends_parallel(st_x, st_y, st_z, linking_length, L, minp, st_ma
 
 
     # Compute friends of friends in parallel --> each process computes the friends of friends in a subdomain
-    with Pool(ncores) as pool:
+    with multiprocessing.get_context('fork').Pool(ncores) as pool:
         results = pool.starmap(friends_of_friends, [(data_sub[i], linking_length) for i in range(ncores)])
         
     # Join groups
@@ -247,7 +246,7 @@ def pyfof_friends_of_friends_parallel(st_x, st_y, st_z, linking_length, L, minp,
 
 
     # Compute friends of friends in parallel --> each process computes the friends of friends in a subdomain
-    with Pool(ncores) as pool:
+    with multiprocessing.get_context('fork').Pool(ncores) as pool:
         results = pool.starmap(pyfof.friends_of_friends, [(data_sub[i], linking_length) for i in range(ncores)])
         
     # Join groups
