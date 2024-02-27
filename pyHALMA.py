@@ -9,12 +9,13 @@
     #    hence the indices will be referred to the region defined by X1, X2, Y1, Y2, Z1, Z2. Not the whole domain.
     # 4. LL calculated in the code as a function of stellar particle mass is EXPERIMENTAL.
     # 5. Distance variables are in COMOVING kpc
-    # 6. RMAX is calculated with respecto to the center of mass of the halo, not the density peak or the most bound particle.
+    # 6. RMAX is calculated with respect to the center of mass of the halo, not the density peak or the most bound particle.
 
 import time
 import numpy as np
 import sys
 import os
+import json
 import warnings
 warnings.filterwarnings('ignore')
 from multiprocessing import Pool
@@ -35,6 +36,10 @@ with open('pyHALMA.dat', 'r') as f:
     FIRST,LAST,STEP = np.array(f.readline().split()[0].split(','), dtype = np.int32)
     f.readline()
     NX, NY, NZ = np.array(f.readline().split()[0].split(','), dtype = np.int32)
+    f.readline()
+    NAMRX, NAMRY, NAMRZ, NLEVELS = np.array(f.readline().split()[0].split(','), dtype = np.int32)
+    f.readline()
+    NPALEV = int(f.readline())
     f.readline()
     ACHE, OMEGA0, T0 =  np.array(f.readline().split()[0].split(','), dtype = np.float64)
     f.readline()
@@ -257,6 +262,19 @@ from python_scripts import halo_properties, halo_gas, pycalipso, fof
 ##############################################
 ASOHF_OUTPUT = 'asohf_results'
 SIMU_MASCLET = 'simu_masclet'
+##############################################
+
+##############################################
+# CREATE PARAMETERS.JSON FILE FOR READ_MASCLET
+##############################################
+PARAMETERS_FILE = 'masclet_parameters.json'
+parameters = {'NMAX': int(NX), 'NMAY': int(NY), 'NMAZ': int(NZ),
+              'NPALEV': int(NPALEV), 'NLEVELS': int(NLEVELS),
+              'NAMRX': int(NAMRX), 'NAMRY': int(NAMRY), 'NAMRZ': int(NAMRZ), 
+              'SIZE': float(L)}
+
+with open(os.path.join(SIMU_MASCLET, PARAMETERS_FILE), 'w') as json_file:
+    json.dump(parameters, json_file)
 ##############################################
 
 ##############################################
