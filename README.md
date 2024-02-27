@@ -36,4 +36,4 @@ USAGE:
 
 WARNINGS:
 
-* Code should not be executed on Windows, since Python multiprocessing using the "fork" method is not available (only "spawn").
+* Code should not be executed on Windows, since Python multiprocessing using the "fork" method is not available in this OS (only "spawn").
