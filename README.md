@@ -12,7 +12,7 @@ parallel directives. We use the AB system for magnitudes and the SDSS passbands,
 
 It is always interesting to know the properties of the dark matter haloes where the stellar haloes are living. Thus, by means of an ASOHF catalogue (see https://github.com/dvallesp/ASOHF), we search the corresponding dark matter halo for every galaxy. 
 
-Just-in-time (JIT) compilation and automatic parallelization of the Python code is done thanks to https://numba.pydata.org/, allowing high computational speeds for less computationally expensive parts. Nevertheless, the heaviest parts (for instance the gas unbinding, which has O(N^2) complexity) are implemented in Fortran with OpenOMP directives.
+Just-in-time (JIT) compilation and automatic parallelization for the Python code is carried out thanks to https://numba.pydata.org/, allowing high computational speeds for less computationally expensive parts. Nevertheless, the heaviest parts (for instance the gas unbinding, which has O(N^2) complexity) are implemented in Fortran with OpenMP directives.
 
 Fortran is called within Python by means of F2PY: https://numpy.org/doc/stable/f2py/
 
@@ -25,7 +25,7 @@ USAGE:
   - E-MILES --> directory of E-MILES SSP models
   - asohf_results --> where to find the ASOHF catalogue
  
-* COMPILE "compile_f2py" with ./compile_f2py to create callable Fortran modules
+* COMPILE "compile_f2py" with ./compile_f2py to create callable Fortran modules inside "fortran_modules"
 
 * Specify the most suitable options in pyHALMA.dat and other necessary parameters, like the path to "masclet_framework".
 
