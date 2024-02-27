@@ -32,3 +32,8 @@ USAGE:
 * Call ./run.sh with your desired options.
   
 * Output is written in a "pyHALMA_output" folder which is created inside your "simu_masclet" directory.
+
+
+WARNINGS:
+
+* Code should not be executed on Windows, since Python multiprocessing using the "fork" method is not available (only "spawn").
