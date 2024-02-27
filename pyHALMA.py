@@ -3,11 +3,11 @@
 # Description: This is the main file of the pyHALMA code. It reads MASCLET files and calculates the properties of the haloes.
 
 # WARNINGS:
-    # 1. When RPS_FLAG is activated, it will significantly slow down the code.
+    # 1. When RPS_FLAG or POT_ENERGY_FLAG are activated, they will significantly slow down the code.
     # 2. When ESCAPE_CLEANING is activated, it will significantly slow down the code.
     # 3. If not FULL_DOMAIN_FLAG, the code will only read the region defined by X1, X2, Y1, Y2, Z1, Z2.
     #    hence the indices will be referred to the region defined by X1, X2, Y1, Y2, Z1, Z2. Not the whole domain.
-    # 4. LL calculated in the code as a function of stellar particle mass is experimental.
+    # 4. LL calculated in the code as a function of stellar particle mass is EXPERIMENTAL.
     # 5. Distance variables are in COMOVING kpc
     # 6. RMAX is calculated with respecto to the center of mass of the halo, not the density peak or the most bound particle.
 
@@ -247,6 +247,8 @@ def write_catalogue(haloes, iteration_data, PYHALMA_OUTPUT):
 ##############################################
 # SETTING UP masclet_framework
 sys.path.append(PATH_MASCLET_FRAMEWORK)
+sys.path.append(os.path.abspath(os.getcwd()) + '/python_scripts')
+sys.path.append(os.path.abspath(os.getcwd()) + '/fortran_modules')
 from masclet_framework import read_masclet, units, read_asohf
 import halo_properties, halo_gas, pycalipso, fof
 ##############################################
@@ -437,6 +439,13 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                                                         output_metalicity=True, output_id=True, are_BH = True,
                                                         output_BH=True)
     else:
+
+        if PARALLEL_FOF:
+            print(' WARNING: PARALLEL FoF is not available for non FULL_DOMAIN')
+            print('          PARALLEL FoF will be deactivated')
+            print()
+            PARALLEL_FOF = False
+
         read_region = ("box",X1,X2,Y1,Y2,Z1,Z2)
         masclet_st_data = read_masclet.lowlevel_read_clst(iteration, path = SIMU_MASCLET, parameters_path=SIMU_MASCLET, 
                                                         digits=5, max_refined_level=1000, 
@@ -472,7 +481,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         data = data.astype(np.float64)
         st_kdtree = KDTree(data)
         ##############################################
-        
+
         print()
         print(f'Number of star particles: {len(st_x):.2e}', )
 
@@ -701,19 +710,6 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 (vx, vy, vz) = halo_properties.CM_velocity(mass, part_list, st_vx, st_vy, st_vz, st_mass)
                 most_distant_r = halo_properties.furthest_particle(cx, cy, cz, part_list, st_x, st_y, st_z)
 
-                #ESCAPE VELOCITY cleaning
-                if ESCAPE_CLEANING:
-                    bound = halo_properties.escape_velocity_unbinding_fortran(
-                                            rete, L, NX, grid_data, gas_data, masclet_dm_data, cx, cy, cz, 
-                                            vx, vy, vz, most_distant_r, part_list, st_x, st_y, st_z, 
-                                            st_vx, st_vy, st_vz, st_mass, FACTOR_V, rho_B
-                                            )
-                    part_list = part_list[bound] 
-                
-                    #RECENTERING AFTER ESCAPE VELOCITY CLEANING
-                    (cx, cy, cz, mass) = halo_properties.center_of_mass(part_list, st_x, st_y, st_z, st_mass)
-                    most_distant_r = halo_properties.furthest_particle(cx, cy, cz, part_list, st_x, st_y, st_z)
-
                 #PHASE-SPACE CLEANING
                 #Create 3D grid with cellsize 2*LL for cleaning. Calculate most distant particle to center of mass
                 grid = np.arange( - ( most_distant_r + LL ), most_distant_r + LL, 2*LL)
@@ -750,7 +746,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 most_distant_r = halo_properties.furthest_particle(cx, cy, cz, part_list[control], st_x, st_y, st_z)
 
                 #If after cleaning there are more than MINP particles, save the halo
-                if npart > MINP:
+                if npart >= MINP:
                     center_x.append(cx)
                     center_y.append(cy)
                     center_z.append(cz)
@@ -1738,7 +1734,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
 
     ###########################################
     #save particles in .npy (python friendly)
-    if len(data)>0 and len(groups)>0:
+    if st_x.shape[0] > 0 and len(groups)>0:
         string_it = f'{iteration:05d}'
         new_groups = np.array(new_groups, dtype=object)
         new_groups = new_groups[argsort_part]

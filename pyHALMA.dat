@@ -1,6 +1,6 @@
 *************MAIN PARAMETERS*************************************************
 firts, last iteration,write interval --------------------------------------->
-500,500,50
+0,0,50
 MASCLET cells nx,ny,nz: coarse hydro. grid --------------------------------->
 128,128,128
 hubble cte(h), OMEGA matter, t0 -------------------------------------------->
@@ -19,6 +19,10 @@ link(kpc) (fixed) ---------------------------------------------------------->
 2.4
 choose link according to particle mass (0 -> no, 1 -> yes ) ---------------->
 0
+use pyfof (0 -> no, 1 -> yes ) -------------------------------------------->
+1
+parallel FoF with sub-domain decomposition (0 -> no, 1 -> yes ) ------------>
+1
 min num. part. per halo ---------------------------------------------------->
 50
 phase space cleaning (0 -> no, 1 -> yes ) ---------------------------------->
@@ -38,9 +42,9 @@ maximum number of particles to consider brute-force ------------------------>
 *****************************************************************************
 *************SETTING UP******************************************************
 number of CPU cores for NUMBA and OpenMP to parallelize -------------------->
-8
+24
 path that contains masclet_framework --------------------------------------->
-/home/monllor/projects/
+/path/that/contains/masclet_framework
 *****************************************************************************
 *************SUBSTRUCTURE PARAMETERS*****************************************
 search for substructure (0 -> no, 1 -> yes ) ------------------------------->

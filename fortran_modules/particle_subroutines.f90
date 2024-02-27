@@ -514,8 +514,49 @@ contains
     END SUBROUTINE
 
 
+    SUBROUTINE serial_brute_force_binding_energy(ntotal, &
+                total_mass, total_x, total_y, total_z, &
+                ntest, test_x, test_y, test_z, binding_energy)
+    implicit none
+
+    !input
+    integer, intent(in) :: ntotal, ntest
+    real, dimension(ntotal), intent(in) :: total_mass, total_x, total_y, total_z
+    real, dimension(ntest), intent(in) :: test_x, test_y, test_z
+
+    !local
+    integer :: ip, ip2
+    real :: r
+
+    !output
+    real, dimension(ntest), intent(out) :: binding_energy
+
+    !!!!!!!!! FORTRAN / PYTHON WRAPPER
+    !f2py intent(in) :: ntotal, total_mass, total_x, total_y, total_z, ntest, test_x, test_y, test_z
+    !f2py intent(out) :: binding_energy
+    !f2py depend(ntotal) :: total_mass, total_x, total_y, total_z
+    !f2py depend(ntest) :: test_x, test_y, test_z
+
+    binding_energy(:) = 0.
+
+    do ip=1,ntest
+    do ip2=1,ntotal
+    if ( total_x(ip2) /= test_x(ip)) then
+    if ( total_y(ip2) /= test_y(ip)) then
+    if ( total_z(ip2) /= test_z(ip)) then
+    r = sqrt( (total_x(ip2)-test_x(ip))**2 &
+            + (total_y(ip2)-test_y(ip))**2 &
+            + (total_z(ip2)-test_z(ip))**2 )
+    binding_energy(ip) = binding_energy(ip) + total_mass(ip2) / r
+    endif
+    endif
+    endif
+    enddo
+    enddo
+    END SUBROUTINE
 
 
+    
     ! SUBROUTINE gpu_brute_force_binding_energy(ntotal, &
     !                 total_mass, total_x, total_y, total_z, &
     !                 ntest, test_x, test_y, test_z, binding_energy)

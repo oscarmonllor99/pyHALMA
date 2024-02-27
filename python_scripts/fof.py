@@ -66,7 +66,7 @@ def friends_of_friends(data, linking_length):
             friends_save += query
             already_looked[ip2] = True
 
-            # np.unique is used to remove duplicates, otherwise the list of friends may grow indefinitely
+            # np.unique and already_friends are used to remove duplicates, otherwise the list of friends may grow indefinitely
             if it_ip % iterations_to_clean == 0 and it_ip != 0:
                 #friends = np.unique(np.array(friends)).tolist()
                 already_friend[friends] = True
@@ -79,6 +79,7 @@ def friends_of_friends(data, linking_length):
     return final_groups
 
 
+
 ############################################################################################################
 # INTERNAL FRIENDS OF FRIENDS WRAPPERS
 ############################################################################################################
@@ -88,12 +89,13 @@ def friends_of_friends_serial(st_x, st_y, st_z, linking_length):
     return friends_of_friends(data, linking_length)
 
 
+
 # parallel version
 # domain decomposition in 3D subdomains (one subdomain per process)
 def friends_of_friends_parallel(st_x, st_y, st_z, linking_length, L, minp, st_mass):
     #How many cores to use (has to be n³, n=2,3,4,...) in order
     #for the subdomains to be cubic
-    mandatories = np.array([1, 8, 27, 64])
+    mandatories = np.array([1, 8, 64, 512])
     ncores = np.max(mandatories[mandatories <= get_num_threads()])
     
     #Define subdomains
@@ -175,8 +177,6 @@ def friends_of_friends_parallel(st_x, st_y, st_z, linking_length, L, minp, st_ma
 
 
 
-
-
 ############################################################################################################
 # PYFOF WRAPPERS
 ############################################################################################################
@@ -191,10 +191,9 @@ def pyfof_friends_of_friends_serial(st_x, st_y, st_z, linking_length):
 # domain decomposition in 3D subdomains (one subdomain per process)
 def pyfof_friends_of_friends_parallel(st_x, st_y, st_z, linking_length, L, minp, st_mass):
     import pyfof
-
-    #How many cores to use (has to be n³, n=2,3,4,...) in order
-    #for the subdomains to be cubic
-    mandatories = np.array([1, 8, 27, 64])
+    #How many cores to use (has to be n³, n=2,4,8...) in order
+    #for the subdomains to be cubic and cpu-friendly
+    mandatories = np.array([1, 8, 64, 512])
     ncores = np.max(mandatories[mandatories <= get_num_threads()])
     
     #Define subdomains
@@ -206,12 +205,10 @@ def pyfof_friends_of_friends_parallel(st_x, st_y, st_z, linking_length, L, minp,
     sub_x = np.zeros((ncores, 2))
     sub_y = np.zeros((ncores, 2))
     sub_z = np.zeros((ncores, 2))
-    # We add a buffer to the subdomains to
-    # take into account particles that are close to the boundary in
-    # other subdomains
-    # We will check for duplicates in the buffer zone after the FOF
+    # Add a buffer to the subdomains to take into account particles 
+    #    that are close to the boundary.
+    # Will check for duplicates in the buffer zone after FoF.
     buffer = 0.1 #100 kpc
-    
     ic = 0
     for ix in range(nsides):
         for iy in range(nsides):
