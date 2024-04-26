@@ -1,6 +1,7 @@
 import numpy as np
 from numba import njit, get_num_threads
 from masclet_framework import units, tools
+import matplotlib.pyplot as plt
 ############################################
 from fortran_modules import particle
         
@@ -251,7 +252,7 @@ def st_gas_dm_particles_inside(rete, L, ncoarse, grid_data,
     dm_mass = masclet_dm_data[3]*units.mass_to_sun #in Msun
     # Search for the DM particles inside R05
     #inside_Rrps = parallel_inside(dm_x, dm_y, dm_z, R, cx, cy, cz)
-    inside_Rrps = dm_kdtree.query_ball_point([cx + L/2, cy + L/2, cz + L/2], R, workers=ncores)
+    inside_Rrps = dm_kdtree.query_ball_point([cx, cy, cz], R, workers=ncores)
     dm_x = dm_x[inside_Rrps]
     dm_y = dm_y[inside_Rrps]
     dm_z = dm_z[inside_Rrps]
@@ -265,7 +266,7 @@ def st_gas_dm_particles_inside(rete, L, ncoarse, grid_data,
     st_oripa = masclet_st_data[9]
     # Search for the star particles inside R05
     # inside_Rrps = parallel_inside(st_x, st_y, st_z, R, cx, cy, cz)
-    inside_Rrps = st_kdtree.query_ball_point([cx + L/2, cy + L/2, cz + L/2], R, workers=ncores)
+    inside_Rrps = st_kdtree.query_ball_point([cx, cy, cz], R, workers=ncores)
     st_x = st_x[inside_Rrps]
     st_y = st_y[inside_Rrps]
     st_z = st_z[inside_Rrps]

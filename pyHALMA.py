@@ -10,6 +10,7 @@
     # 4. LL calculated in the code as a function of stellar particle mass is EXPERIMENTAL.
     # 5. Distance variables are in COMOVING kpc
     # 6. RMAX is calculated with respect to the center of mass of the halo, not the density peak or the most bound particle.
+    # 7. Code should not be executed in Windows, since multiprocessing by Fork is not available (just Spawn).
 
 import time
 import numpy as np
@@ -624,9 +625,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 print('     Building DM KDtree')
                 t0 = time.time()
                 data_dm = np.array((masclet_dm_data[0], masclet_dm_data[1], masclet_dm_data[2])).T
-                data_dm = data_dm + L/2 # shift to 0, L
-                data_dm[data_dm >= L] = data_dm[data_dm >= L] - L # periodic boundary conditions
-                dm_kdtree = KDTree(data_dm, boxsize=np.array([L,L,L]))
+                dm_kdtree = KDTree(data_dm)
                 print('     Time to build DM kdtree:', time.time()-t0, 's')
                 ##############################################
                 print()
@@ -939,7 +938,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
 
                 # GAS, DM AND ST PARTICLES INSIDE RADIUS FOR POTENTIAL ENERGY
                 POT_RADIUS = FACTOR_R12_POT*rad05[ihal]
-
+                
                 if RPS_FLAG or POT_ENERGY_FLAG:
 
                     (gas_x_in, gas_y_in, gas_z_in, 
