@@ -167,7 +167,7 @@ def readVega(zp_5556):
 ##################################################################################################
 # MAGNITUDE CALCULATION FUNCTIONS, NOW IMPLEMENTED IN FORTRAN
 ##################################################################################################
-@njit
+@njit(fastmath=True)
 def from_ws_to_wfilt(fs, wfilt, nfilt, ws):
     fs_new = np.zeros(nfilt)
     for i_f in range(nfilt):
@@ -182,14 +182,14 @@ def from_ws_to_wfilt(fs, wfilt, nfilt, ws):
 
     return fs_new
 
-@njit(parallel = True)
+@njit(parallel = True, fastmath=True)
 def trapecio(f, x):
     sum = 0.
     for ix in prange(len(x)-1):
         sum += (x[ix+1] - x[ix])*(f[ix] + f[ix+1])/2
     return sum
 
-@njit
+@njit(fastmath=True)
 def mymagnitude(wfilt, rfilt, nfilt, ns, ws, fs):
     #IN ORIGINAL CODE
     #adapted from Cardiel's routine in the photometry code
@@ -211,7 +211,7 @@ def mymagnitude(wfilt, rfilt, nfilt, ns, ws, fs):
     #notar SUM_S es luminosidad y SUM_V es flujo, esto aún no es una magnitud aparente, hasta que no se le sume cfact, que convierte sum_s a flujo a una distancia DLUM
     return sum_s, mag
 
-@njit
+@njit(fastmath=True)
 def mag_v1_0(ws, fs, ns, fmag, flux, nf, nlf, wf, rf, dlum, zeta):
 
     # unit conversion from lum[erg/s/A] to flux[erg/s/A/cm²] for sum_s, which is in units of  SOLAR LUMINOSITY
@@ -235,7 +235,7 @@ def mag_v1_0(ws, fs, ns, fmag, flux, nf, nlf, wf, rf, dlum, zeta):
 
 
 #FIND GALAXY TOTAL SPECTRUM, MAIN FUNCTION
-@njit
+@njit(fastmath=True)
 def make_light(npart, mass, age, met, wavelenghts, SSP, age_span, Z_span, nw, nZ, nages, istart, iend, disp, lumg, 
                tam_i, tam_j, vel, nx, ny, clight):
     lump = np.zeros(npart)
@@ -311,7 +311,7 @@ def make_light(npart, mass, age, met, wavelenghts, SSP, age_span, Z_span, nw, nZ
     return flux_cell, flux_cell_sig, fluxtot, vell_malla, sigl_malla, lum_malla, twl, Zwl, vell2_malla
 
 
-@njit
+@njit(fastmath=True)
 def magANDfluxes(wavelenghts, nw, nf, nlf, wf, rf, wv, fv, nv, dlum, nx, ny, flux_cell, area_arc):
     SBf = np.zeros((nx, ny, nf)) #BRILLO SUPERFICIAL DE CADA CELDA EN mag/arcsec^2
     magf = np.zeros((nx, ny, nf)) #MAGNITUD APARENTE DE CADA CELDA A UNA DISTANCIA DLUM
@@ -329,7 +329,7 @@ def magANDfluxes(wavelenghts, nw, nf, nlf, wf, rf, wv, fv, nv, dlum, nx, ny, flu
 
 
 #CALCULATING MEAN QUANTITIES IN EACH CELL
-@njit
+@njit(fastmath=True)
 def mean_mesh2D(nx, ny, npart, mass, met, age, vel, tam_i, tam_j):
     num_cell = np.zeros((nx,ny), dtype = np.int64)
     mass_cell = np.zeros((nx,ny))
@@ -373,7 +373,7 @@ def mean_mesh2D(nx, ny, npart, mass, met, age, vel, tam_i, tam_j):
     return num_cell, mass_cell, VCM_malla, sig_cell, twm, tmed, Zwm, Zmed
 
 
-@njit
+@njit(fastmath=True)
 def put_particles_in_grid(grid_centers, x, y, z):
     npart = len(x)
     which_cell_x = np.zeros(npart, dtype = np.int32)

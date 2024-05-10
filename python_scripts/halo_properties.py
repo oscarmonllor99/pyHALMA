@@ -1,13 +1,15 @@
 import numpy as np
 from numba import njit, prange, get_num_threads
 from scipy.optimize import curve_fit
+from scipy.spatial import KDTree
 from sklearn.metrics import r2_score
-from masclet_framework import units, particles
+from masclet_framework import units, particles, particle2grid
+import multiprocessing as mp
 ############################################
 from fortran_modules import particle
 from python_scripts import halo_gas
 
-@njit(parallel = True)
+@njit(parallel = True, fastmath=True)
 def total_mass(part_list, st_mass):
     M = 0.
     npart = len(part_list)
@@ -17,7 +19,7 @@ def total_mass(part_list, st_mass):
 
     return M
 
-@njit(parallel = True)
+@njit(parallel = True, fastmath=True)
 def center_of_mass(part_list, st_x, st_y, st_z, st_mass):
     cx = 0.
     cy = 0.
@@ -36,7 +38,7 @@ def center_of_mass(part_list, st_x, st_y, st_z, st_mass):
     else:
         return 0., 0., 0., 0.
 
-@njit(parallel = True)
+@njit(parallel = True, fastmath=True)
 def CM_velocity(M, part_list, st_vx, st_vy, st_vz, st_mass):
     vx = 0.
     vy = 0.
@@ -53,7 +55,7 @@ def CM_velocity(M, part_list, st_vx, st_vy, st_vz, st_mass):
     else:
         return 0., 0., 0.
 
-@njit(parallel = True)
+@njit(parallel = True, fastmath=True)
 def tully_fisher_velocity(part_list, cx, cy, cz, st_x, st_y, st_z, vx, vy, vz, lx, ly, lz,
                           st_vx, st_vy, st_vz, st_mass, RAD05):
     mass_contribution = 0.
@@ -89,7 +91,7 @@ def tully_fisher_velocity(part_list, cx, cy, cz, st_x, st_y, st_z, vx, vy, vz, l
     return v_TF/mass_contribution
 
 
-@njit
+@njit(fastmath=True)
 def furthest_particle(cx, cy, cz, part_list, st_x, st_y, st_z):
     RRHH = 0.
     npart = len(part_list)
@@ -104,7 +106,7 @@ def furthest_particle(cx, cy, cz, part_list, st_x, st_y, st_z):
 
     return RRHH
 
-@njit
+@njit(fastmath=True)
 def calc_cell(cx, cy, cz, grid, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, vcm_cell, mass_cell, quantas_cell, sig3D_cell):
     npart = len(part_list)
     which_cell_x = np.zeros(npart, dtype = np.int32)
@@ -157,7 +159,7 @@ def calc_cell(cx, cy, cz, grid, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz
 
     return vcm_cell, mass_cell, quantas_cell, sig3D_cell, which_cell_x, which_cell_y, which_cell_z
 
-@njit
+@njit(fastmath=True)
 def clean_cell(cx, cy, cz, M, RRHH, grid, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, 
                vcm_cell, mass_cell, quantas_cell, sig3D_cell, ll, q_fil, sig_fil, which_cell_x, which_cell_y, which_cell_z):
     npart = len(part_list)
@@ -357,7 +359,7 @@ part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, factor_v, rho_B
 
 
 
-@njit
+@njit(fastmath=True)
 def half_mass_radius(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass):
     npart = len(part_list)
     #FIRST SORT PARTICLES BY DISTANCE TO CM
@@ -387,7 +389,7 @@ def half_mass_radius(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass):
     return RAD05
 
 
-@njit
+@njit(fastmath=True)
 def half_mass_radius_pop3(cx, cy, cz, M, part_list_pop3, st_x, st_y, st_z, st_mass):
     npart_pop3 = len(part_list_pop3)
     #FIRST SORT PARTICLES BY DISTANCE TO CM
@@ -417,7 +419,7 @@ def half_mass_radius_pop3(cx, cy, cz, M, part_list_pop3, st_x, st_y, st_z, st_ma
 
 
 
-@njit
+@njit(fastmath=True)
 def half_mass_radius_pop3_SFR(cx, cy, cz, M, part_list_pop3, st_x, st_y, st_z, 
                               st_mass, st_age, cosmo_time, dt):
 
@@ -450,7 +452,7 @@ def half_mass_radius_pop3_SFR(cx, cy, cz, M, part_list_pop3, st_x, st_y, st_z,
     return RAD05
 
 
-@njit
+@njit(fastmath=True)
 def half_mass_radius_proj(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass):
     npart = len(part_list)
     #FIRST SORT PARTICLES BY DISTANCE TO CM
@@ -515,7 +517,7 @@ def half_mass_radius_proj(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass):
     return RAD05_x, RAD05_y, RAD05_z
 
 
-@njit(parallel = True)
+@njit(parallel = True, fastmath=True)
 def angular_momentum(M, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, cx, cy, cz, vx, vy, vz):
     lx = 0.
     ly = 0.
@@ -537,7 +539,7 @@ def angular_momentum(M, part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mas
     return lx/M, ly/M, lz/M
 
 
-@njit(parallel = True)
+@njit(parallel = True, fastmath=True)
 def kinematic_morphology(part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, cx, cy, cz, vx, vy, vz, lx, ly, lz):
     # Reference: Correa et al. 2017
     # The relation between galaxy morphology and colour in the EAGLE simulation
@@ -572,44 +574,74 @@ def kinematic_morphology(part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_ma
     return kin_corot/kin_total
 
 
-@njit
+#@njit(fastmath=True)
 def density_peak(part_list, st_x, st_y, st_z, st_mass, ll):
-    N_cells = 50
-    grid_x = np.linspace(np.min(st_x[part_list]) - ll, np.max(st_x[part_list]) + ll, N_cells)
-    grid_y = np.linspace(np.min(st_y[part_list]) - ll, np.max(st_y[part_list]) + ll, N_cells)
-    grid_z = np.linspace(np.min(st_z[part_list]) - ll, np.max(st_z[part_list]) + ll, N_cells)
+    ####################
+    ## OLD METHOD
+    ####################
+    # N_cells = 50
+    # grid_x = np.linspace(np.min(st_x[part_list]) - ll, np.max(st_x[part_list]) + ll, N_cells)
+    # grid_y = np.linspace(np.min(st_y[part_list]) - ll, np.max(st_y[part_list]) + ll, N_cells)
+    # grid_z = np.linspace(np.min(st_z[part_list]) - ll, np.max(st_z[part_list]) + ll, N_cells)
 
-    nx = len(grid_x)
-    ny = len(grid_y)
-    nz = len(grid_z)
+    # nx = len(grid_x)
+    # ny = len(grid_y)
+    # nz = len(grid_z)
 
-    cell_mass = np.zeros((nx,ny,nz))
+    # cell_mass = np.zeros((nx,ny,nz))
     
-    Npart = len(part_list)
-    for ip in range(Npart):
-        ipp = part_list[ip]
-        ix = np.argmin(np.abs(grid_x - st_x[ipp]))
-        iy = np.argmin(np.abs(grid_y - st_y[ipp]))
-        iz = np.argmin(np.abs(grid_z - st_z[ipp]))
-        cell_mass[ix, iy, iz] += st_mass[ipp]
+    # Npart = len(part_list)
+    # for ip in range(Npart):
+    #     ipp = part_list[ip]
+    #     ix = np.argmin(np.abs(grid_x - st_x[ipp]))
+    #     iy = np.argmin(np.abs(grid_y - st_y[ipp]))
+    #     iz = np.argmin(np.abs(grid_z - st_z[ipp]))
+    #     cell_mass[ix, iy, iz] += st_mass[ipp]
 
-    xmax = int(nx/2)
-    ymax = int(ny/2)
-    zmax = int(nz/2)
-    mass_max = 0.
-    for ix in range(nx):
-        for iy in range(ny):
-            for iz in range(nz):
-                if cell_mass[ix, iy, iz] > mass_max:
-                    xmax = ix
-                    ymax = iy
-                    zmax = iz
-                    mass_max = cell_mass[ix, iy, iz]
+    # xmax = int(nx/2)
+    # ymax = int(ny/2)
+    # zmax = int(nz/2)
+    # mass_max = 0.
+    # for ix in range(nx):
+    #     for iy in range(ny):
+    #         for iz in range(nz):
+    #             if cell_mass[ix, iy, iz] > mass_max:
+    #                 xmax = ix
+    #                 ymax = iy
+    #                 zmax = iz
+    #                 mass_max = cell_mass[ix, iy, iz]
 
 
-    return grid_x[xmax], grid_y[ymax], grid_z[zmax]
+    # return grid_x[xmax], grid_y[ymax], grid_z[zmax]
 
-@njit(parallel = True)
+    ####################
+    # NEW, KDTREE METHOD
+    ####################
+    # First, build KDTree
+    x = st_x[part_list]
+    y = st_y[part_list]
+    z = st_z[part_list]
+    data = np.array((x, y, z)).T
+    tree = KDTree(data)
+
+    #
+    npart = np.int64(len(x))
+    #
+    ncores = get_num_threads()
+    #
+    k = 16 #distance to the k-th nearest neighbor
+
+    # Compute h distance of the particles using KDTree and multiprocessing
+    with mp.get_context("fork").Pool(ncores) as p:
+        hpart = np.array(p.starmap(particle2grid.query_k, 
+                                   [(x[ipart], y[ipart], z[ipart], tree, k)
+                                             for ipart in range(npart)])).flatten()
+        
+    ipmin = np.argmin(hpart) #index of the particle with the minimum distance to the k-th nearest neighbor
+    return x[ipmin], y[ipmin], z[ipmin]
+
+
+@njit(parallel = True, fastmath=True)
 def star_formation(part_list, st_mass, st_age, cosmo_time, dt):
     mass_sfr = 0.
     Npart = len(part_list)
@@ -620,7 +652,7 @@ def star_formation(part_list, st_mass, st_age, cosmo_time, dt):
 
     return mass_sfr
 
-@njit(parallel = True)
+@njit(parallel = True, fastmath=True)
 def pop3_mass(part_list, st_mass):
     mass_pop3 = np.sum(st_mass[part_list])
     return mass_pop3
@@ -631,7 +663,7 @@ def pop3_SFR_mass(part_list, st_mass, st_age, cosmo_time, dt):
     return mass_pop3
 
 
-@njit(parallel = True)
+@njit(parallel = True, fastmath=True)
 def sigma_effective(part_list, R05, st_x, st_y, st_z, st_vx, st_vy, st_vz, cx, cy, cz, vx, vy, vz):
     Npart = len(part_list)
     sigma_05 = 0.
@@ -841,7 +873,7 @@ def sigma_projections_fortran(grid, n_cell, part_list, st_x, st_y, st_z, st_vx, 
 
 
 
-@njit(parallel = True)
+@njit(parallel = True, fastmath=True)
 def avg_age_metallicity(part_list, st_age, st_met, st_mass, cosmo_time):
     mass = 0.
     avg_age = 0.

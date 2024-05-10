@@ -128,13 +128,8 @@ with open('pyHALMA.dat', 'r') as f:
 ########## ########## ########## ########## ########## 
 
 def good_groups(groups, minp):
-    good_index = np.zeros((len(groups), ), dtype = bool)  
-    for ig in range(len(groups)):
-        if len(groups[ig]) >= minp:
-            good_index[ig] = True
-    return good_index
-
-
+    return np.array([len(groups[ig]) >= minp for ig in range(len(groups))], dtype = bool)
+    
 def write_catalogue(haloes, iteration_data, PYHALMA_OUTPUT):
     catalogue = open(PYHALMA_OUTPUT+'/stellar_haloes'+string_it, 'w')
     catalogue.write('**************************************************************' + '\n')
@@ -386,7 +381,7 @@ if CALIPSO_FLAG:
 ##############################################
 ### CALCULATING LINKING LENGHT IF CHOSEN
 ##############################################
-# THIS IS MADE SUCH THAT IF MASS_PART = 10^6 Msun, then LL = 2.4 kpc,
+# THIS IS MADE SUCH THAT IF MASS_PART = 10^6 Msun, then LL = 2.4 ckpc,
 # which is the most suitable configuration found
 if CALCULATE_LL_FLAG:
     gamma = np.log10(MASS_PART)
@@ -651,10 +646,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                         r12 = halo_properties.half_mass_radius(cx, cy, cz, mass, part_list, st_x, st_y, st_z, st_mass)
                         #Sub FoF
                         if PYFOF_FLAG:
-                            sub_groups = pyfof.friends_of_friends(data = np.array((st_x[part_list], 
-                                                                                   st_y[part_list], 
-                                                                                   st_z[part_list])).T.astype(np.float64), 
-                                                                                   linking_length = sub_LL)
+                            sub_groups = fof.pyfof_friends_of_friends_serial(st_x[part_list],  st_y[part_list], st_z[part_list], sub_LL)
                             sub_groups = np.array(sub_groups, dtype=object)
                             sub_groups = sub_groups[good_groups(sub_groups, MINP_SUB)]
                         else:
@@ -752,7 +744,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 
                 if not PSC_FLAG: #IF NOT PHASE-SPACE CLEANING, ALL PARTICLES ARE GOOD
                     control = np.ones(len(part_list)).astype(bool)
-
+                
                 if len(part_list) < 500: #if low number of particles, do not clean, as it may not converge
                     control = np.ones(len(part_list)).astype(bool)
 
