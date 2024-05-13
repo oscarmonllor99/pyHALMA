@@ -574,45 +574,45 @@ def kinematic_morphology(part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_ma
     return kin_corot/kin_total
 
 
-#@njit(fastmath=True)
+@njit(fastmath=True)
 def density_peak(part_list, st_x, st_y, st_z, st_mass, ll):
-    ####################
-    ## OLD METHOD
-    ####################
-    # N_cells = 50
-    # grid_x = np.linspace(np.min(st_x[part_list]) - ll, np.max(st_x[part_list]) + ll, N_cells)
-    # grid_y = np.linspace(np.min(st_y[part_list]) - ll, np.max(st_y[part_list]) + ll, N_cells)
-    # grid_z = np.linspace(np.min(st_z[part_list]) - ll, np.max(st_z[part_list]) + ll, N_cells)
+    ###################
+    # OLD METHOD
+    ###################
+    N_cells = 50
+    grid_x = np.linspace(np.min(st_x[part_list]) - ll, np.max(st_x[part_list]) + ll, N_cells)
+    grid_y = np.linspace(np.min(st_y[part_list]) - ll, np.max(st_y[part_list]) + ll, N_cells)
+    grid_z = np.linspace(np.min(st_z[part_list]) - ll, np.max(st_z[part_list]) + ll, N_cells)
 
-    # nx = len(grid_x)
-    # ny = len(grid_y)
-    # nz = len(grid_z)
+    nx = len(grid_x)
+    ny = len(grid_y)
+    nz = len(grid_z)
 
-    # cell_mass = np.zeros((nx,ny,nz))
+    cell_mass = np.zeros((nx,ny,nz))
     
-    # Npart = len(part_list)
-    # for ip in range(Npart):
-    #     ipp = part_list[ip]
-    #     ix = np.argmin(np.abs(grid_x - st_x[ipp]))
-    #     iy = np.argmin(np.abs(grid_y - st_y[ipp]))
-    #     iz = np.argmin(np.abs(grid_z - st_z[ipp]))
-    #     cell_mass[ix, iy, iz] += st_mass[ipp]
+    Npart = len(part_list)
+    for ip in range(Npart):
+        ipp = part_list[ip]
+        ix = np.argmin(np.abs(grid_x - st_x[ipp]))
+        iy = np.argmin(np.abs(grid_y - st_y[ipp]))
+        iz = np.argmin(np.abs(grid_z - st_z[ipp]))
+        cell_mass[ix, iy, iz] += st_mass[ipp]
 
-    # xmax = int(nx/2)
-    # ymax = int(ny/2)
-    # zmax = int(nz/2)
-    # mass_max = 0.
-    # for ix in range(nx):
-    #     for iy in range(ny):
-    #         for iz in range(nz):
-    #             if cell_mass[ix, iy, iz] > mass_max:
-    #                 xmax = ix
-    #                 ymax = iy
-    #                 zmax = iz
-    #                 mass_max = cell_mass[ix, iy, iz]
+    xmax = int(nx/2)
+    ymax = int(ny/2)
+    zmax = int(nz/2)
+    mass_max = 0.
+    for ix in range(nx):
+        for iy in range(ny):
+            for iz in range(nz):
+                if cell_mass[ix, iy, iz] > mass_max:
+                    xmax = ix
+                    ymax = iy
+                    zmax = iz
+                    mass_max = cell_mass[ix, iy, iz]
 
 
-    # return grid_x[xmax], grid_y[ymax], grid_z[zmax]
+    return grid_x[xmax], grid_y[ymax], grid_z[zmax]
 
     ####################
     # NEW, KDTREE METHOD
