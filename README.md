@@ -1,5 +1,8 @@
 # pyHALMA
 
+![logo](https://github.com/oscarmonllor99/pyHALMA/assets/78754527/e9253166-89e2-4197-b8f7-e764543ee27b)
+
+
 This is a halo finder package for the MASCLET code (hydrodynamical N-body code designed for cosmological applications, https://doi.org/10.1111/j.1365-2966.2004.08040.x). It finds (star) particle clusters (haloes) using the friends-of-friends algorithm pyfof (available at https://github.com/simongibbons/pyfof#pyfof) which uses an optimized R*-tree implemented in C++ or either using an internal friends-of-friends algorithm fully written in python which uses scipy.spatial.KDTree. It also tries to find substructures within the FoF groups in order to split bridges between different bound stellar structures. For every stellar halo found, the main progenitors are traced back in time in parallel.
 
 Given this clusters, the code calculates the physical quantities defining the stellar haloes and does a phase-space cleaning to avoid non-desired structures (unbound clusters, philaments, etc.)
