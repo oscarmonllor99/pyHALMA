@@ -424,8 +424,9 @@ def main(calipso_input, star_particle_data, ncell, vel_LOS, tam_i, tam_j, effect
     lumtotr = flux_tot[2]
     lumtoti = flux_tot[3]
 
+    ############ Method 1: using apareance magnitudes
     area_halo_com = np.pi*effective_radius**2 # comoving area of the halo in kpc^2
-    area_halo_pys = area_halo_com * rete** 2 *units.length_to_mpc**2 # physical area of the halo in kpc^2
+    area_halo_pys = area_halo_com / (1 + zeta)**2 # physical area of the halo in kpc^2
     area_halo_arc = area_halo_pys/(arcsec2kpc*arcsec2kpc) # physical area of the halo in arcsec^2
 
     sb_u_tot = fmag_tot[0]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 u filter
@@ -433,23 +434,59 @@ def main(calipso_input, star_particle_data, ncell, vel_LOS, tam_i, tam_j, effect
     sb_r_tot = fmag_tot[2]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 r filter
     sb_i_tot = fmag_tot[3]+2.5*log10(area_halo_arc) # total surface brightness in mag/arcsec^2 i filter
 
-    # sb_u_tot -2.5*log10(flux_tot[0]/(4*np.pi*(dlum*1e6)**2)) + USUN + 21.572
-    # sb_g_tot -2.5*log10(flux_tot[1]/(4*np.pi*(dlum*1e6)**2)) + GSUN + 21.572
-    # sb_r_tot -2.5*log10(flux_tot[2]/(4*np.pi*(dlum*1e6)**2)) + RSUN + 21.572
-    # sb_i_tot -2.5*log10(flux_tot[3]/(4*np.pi*(dlum*1e6)**2)) + ISUN + 21.572
+    # To obtain intrinsic surface brightness, we need to take into account the factor (1+zeta)^4
+    # The factor 10*log(1+zeta) removes the surface brightness dimming due to the expansion of the universe
+    sb_u_tot = sb_u_tot - 10*log10(1+zeta)
+    sb_g_tot = sb_g_tot - 10*log10(1+zeta)
+    sb_r_tot = sb_r_tot - 10*log10(1+zeta)
+    sb_i_tot = sb_i_tot - 10*log10(1+zeta)
+    ####################################################################################################
+
+
+    ############ Method 2: Using absolute magnitudes and luminosities
+    # area_halo_com = np.pi*(effective_radius*1e3)**2 # comoving area of the halo in pc^2
+    # area_halo_pys = area_halo_com / (1 + zeta)**2
+
+    # abs_mag_u = fmag_tot[0] + 5*(1-np.log10(dlum*1e6)) # absolute magnitude in u filter
+    # abs_mag_g = fmag_tot[1] + 5*(1-np.log10(dlum*1e6)) # absolute magnitude in g filter
+    # abs_mag_r = fmag_tot[2] + 5*(1-np.log10(dlum*1e6)) # absolute magnitude in r filter
+    # abs_mag_i = fmag_tot[3] + 5*(1-np.log10(dlum*1e6)) # absolute magnitude in i filter
+
+    # lum_u_solar = 10**(-0.4*(abs_mag_u - USUN)) # luminosity in ""solar luminosities in u filter""", not in solar luminosities
+    # lum_g_solar = 10**(-0.4*(abs_mag_g - GSUN)) # luminosity in ""solar luminosities in g filter""", not in solar luminosities
+    # lum_r_solar = 10**(-0.4*(abs_mag_r - RSUN)) # luminosity in ""solar luminosities in r filter""", not in solar luminosities
+    # lum_i_solar = 10**(-0.4*(abs_mag_i - ISUN)) # luminosity in ""solar luminosities in i filter""", not in solar luminosities
+
+    # I_u = lum_u_solar/area_halo_pys#/(1+zeta)**4 # surface brightness in ""solar luminosities per pc^2 in u filter"""
+    # I_g = lum_g_solar/area_halo_pys#/(1+zeta)**4 # surface brightness in ""solar luminosities per pc^2 in g filter"""
+    # I_r = lum_r_solar/area_halo_pys#/(1+zeta)**4 # surface brightness in ""solar luminosities per pc^2 in r filter"""
+    # I_i = lum_i_solar/area_halo_pys#/(1+zeta)**4 # surface brightness in ""solar luminosities per pc^2 in i filter"""
+
+    # sb_u_tot = -2.5*log10(I_u) + 21.572 + USUN # total surface brightness in mag/arcsec^2 u filter
+    # sb_g_tot = -2.5*log10(I_g) + 21.572 + GSUN # total surface brightness in mag/arcsec^2 g filter
+    # sb_r_tot = -2.5*log10(I_r) + 21.572 + RSUN # total surface brightness in mag/arcsec^2 r filter
+    # sb_i_tot = -2.5*log10(I_i) + 21.572 + ISUN # total surface brightness in mag/arcsec^2 i filter
+    ####################################################################################################
 
     gr = fmag_tot[1]-fmag_tot[2] # color g-r
     ur = fmag_tot[0]-fmag_tot[2] # color u-r
 
     #Second: same quantities but for each cell and "visibility"
-
     sbf, magf, fluxf = calipso.calipso.magandfluxes(get_num_threads(), WAVELENGHTS, N_W, N_F, 
                                                     N_LINES_FILTERS, np.max(N_LINES_FILTERS),
                                                     W_FILTERS, RESPONSE_FILTERS,
                                                     dlum, zeta, ncell, ncell, flux_cell, area_arc)
 
+    
     sbf[fluxf==0.] = np.nan # if flux is zero, magnitudes are undefined
     magf[fluxf==0.] = np.nan
+
+    #Intrinsic surface brightness
+    sbf[:,:,0] = sbf[:,:,0] - 10*log10(1+zeta)
+    sbf[:,:,1] = sbf[:,:,1] - 10*log10(1+zeta)
+    sbf[:,:,2] = sbf[:,:,2] - 10*log10(1+zeta)
+    sbf[:,:,3] = sbf[:,:,3] - 10*log10(1+zeta)
+    
 
     # Central surface brightness in each filter
     central_sb_u = np.nanmin(sbf[:,:,0])

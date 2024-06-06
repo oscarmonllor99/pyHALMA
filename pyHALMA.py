@@ -25,6 +25,7 @@ from tqdm import tqdm
 from math import acos
 from scipy.interpolate import RegularGridInterpolator
 from scipy.spatial import KDTree
+import gc
 
 
 ########## ########## ########## ########## ########## 
@@ -109,6 +110,8 @@ with open('pyHALMA.dat', 'r') as f:
     f.readline()
     f.readline() #ASOHF BLOCK
     f.readline()
+    DM_FLAG = bool(int(f.readline()))
+    f.readline()
     ASOHF_FLAG = bool(int(f.readline()))
     f.readline()
     FACTOR_R12_DM = float(f.readline())
@@ -127,6 +130,29 @@ with open('pyHALMA.dat', 'r') as f:
 ########## ########## ########## ########## ########## 
 ########## ########## ########## ########## ########## 
 
+#functions to search for asohf correspondences
+if ASOHF_FLAG:
+    @numba.njit(fastmath = True)
+    def match_finder(R1, x1, y1, z1, R2, x2, y2, z2, asohf_matches, thres = 1.):
+        dim2 = len(R2)
+        for j in range(dim2):
+            if (np.sqrt((x1-x2[j])**2 + (y1-y2[j])**2 + (z1-z2[j])**2) < thres*(R1 + R2[j]) +  LL):
+                asohf_matches[j] = 1
+        return asohf_matches
+
+    @numba.njit(fastmath = True)
+    def DM_halo_finder(R1, x1, y1, z1, R2, x2, y2, z2, 
+                       asohf_dm_matches, matches_distance, thres = 1., fact_Rvir = 0.5):
+        dim2 = len(x2)
+        for j in range(dim2):
+            dist = np.sqrt((x1-x2[j])**2 + (y1-y2[j])**2 + (z1-z2[j])**2)
+            if dist < (thres*R1 + fact_Rvir*R2[j]):
+                asohf_dm_matches[j] = 1
+                matches_distance[j] = dist
+
+        return asohf_dm_matches, matches_distance
+    
+
 def good_groups(groups, minp):
     return np.array([len(groups[ig]) >= minp for ig in range(len(groups))], dtype = bool)
     
@@ -136,51 +162,29 @@ def write_catalogue(haloes, iteration_data, PYHALMA_OUTPUT):
     catalogue.write('      '.join(str(x) for x in [*iteration_data.values()]) + '\n')
     catalogue.write('**************************************************************' + '\n')
     gap = ''
-    first_strings = ['Halo','n','Mass', 'xcm','ycm','zcm', 'xpeak','ypeak','zpeak', 'xbound','ybound','zbound','id','Mass','frac', 'm_rps','m_rps','m_SFR', 
+    first_strings = ['Halo','n','Mass', 'xcm','ycm','zcm', 'xpeak','ypeak','zpeak', 'xbound','ybound','zbound','id','Mass','frac', 'm_rps','m_rps','m_SFR','m_in',
                         ' R ','R_05','R_05','R_05','R_05','R_05', 'sigma','sigma','sig_x',
-                        'sig_y','sig_z','j', 'V_x','V_y','V_z','Pro.','Pro.',
+                        'sig_y','sig_z','J','Jx','Jy','Jz', 'V_x','V_y','V_z','Pro.','Pro.',
                         'n','type', 'age','age', 'Z','Z', 'V/Sigma', 'lambda', 'k_co', 'v_TF', 'a', 'b', 'c', 'sersic',
                         'lum_u','lum_g','lum_r','lum_i','sb_u','sb_g','sb_r','sb_i','ur_color','gr_color','Mass',
                         'ASOHF', 'Mass', 'R_vir', 'Mass']
     
-    second_strings = ['ID',' part', ' * ', 'kpc','kpc','kpc', 'kpc','kpc','kpc', 'kpc','kpc','kpc', 'bound', 'gas','g_cold',  'cold','hot','  * ', 'max','3D',
+    second_strings = ['ID',' part', ' * ', 'kpc','kpc','kpc', 'kpc','kpc','kpc', 'kpc','kpc','kpc', 'bound', 'gas','g_cold',  'cold','hot','  * ','  * ', 'max','3D',
                     '1D','1D_x','1D_y','1D_z', '05_3D','05_1D','05_1D','05_1D','05_1D',
-                    '  ', 'km/s','km/s','km/s',
+                    '  ','  ','  ','  ', 'km/s','km/s','km/s',
                     '(1)','(2)','merg','merg','m_weig','mean', 'm_weig','mean', '  ', '  ', '  ', 
                     'km/s', 'kpc', 'kpc', 'kpc', '  ',
                     '  ','  ','  ','  ','  ','  ','  ','  ','  ','  ','BH',
                     'ID', 'ASOHF', '  ', 'DM']
     
-    first_line = f'{first_strings[0]:6s}{first_strings[1]:10s}{first_strings[2]:15s}\
-{first_strings[3]:10s}{first_strings[4]:10s}{first_strings[5]:10s}\
-{first_strings[6]:10s}{first_strings[7]:10s}{first_strings[8]:10s}\
-{first_strings[9]:10s}{first_strings[10]:10s}{first_strings[11]:10s}{first_strings[12]:10s}\
-{first_strings[13]:15s}{first_strings[14]:8s}{first_strings[15]:15s}{first_strings[16]:15s}{first_strings[17]:15s}\
-{first_strings[18]:10s}{first_strings[19]:10s}{first_strings[20]:10s}{first_strings[21]:10s}{first_strings[22]:10s}{first_strings[23]:10s}\
-{first_strings[24]:10s}{first_strings[25]:10s}{first_strings[26]:10s}{first_strings[27]:10s}{first_strings[28]:10s}{first_strings[29]:10s}\
-{first_strings[30]:10s}{first_strings[31]:10s}{first_strings[32]:10s}\
-{first_strings[33]:6s}{first_strings[34]:6s}{first_strings[35]:6s}{first_strings[36]:6s}{first_strings[37]:9s}{first_strings[38]:9s}\
-{first_strings[39]:11s}{first_strings[40]:11s}{first_strings[41]:11s}{first_strings[42]:11s}{first_strings[43]:11s}{first_strings[44]:11s}{first_strings[45]:11s}\
-{first_strings[46]:11s}{first_strings[47]:11s}{first_strings[48]:11s}{first_strings[49]:11s}{first_strings[50]:11s}{first_strings[51]:11s}{first_strings[52]:11s}\
-{first_strings[53]:11s}{first_strings[54]:11s}{first_strings[55]:11s}{first_strings[56]:11s}{first_strings[57]:11s}{first_strings[58]:11s}\
-{gap}{first_strings[59]:15s}{first_strings[60]:10s}{first_strings[61]:15s}{first_strings[62]:10s}{first_strings[63]:15s}'
+    first_line = ''
+    for element in first_strings:
+        first_line += f'{element:15s}'
     
-    second_line = f'{second_strings[0]:6s}{second_strings[1]:10s}{second_strings[2]:15s}\
-{second_strings[3]:10s}{second_strings[4]:10s}{second_strings[5]:10s}\
-{second_strings[6]:10s}{second_strings[7]:10s}{second_strings[8]:10s}\
-{second_strings[9]:10s}{second_strings[10]:10s}{second_strings[11]:10s}{second_strings[12]:10s}\
-{second_strings[13]:15s}{second_strings[14]:8s}{second_strings[15]:15s}{second_strings[16]:15s}{second_strings[17]:15s}\
-{second_strings[18]:10s}{second_strings[19]:10s}{second_strings[20]:10s}{second_strings[21]:10s}{second_strings[22]:10s}{second_strings[23]:10s}\
-{second_strings[24]:10s}{second_strings[25]:10s}{second_strings[26]:10s}{second_strings[27]:10s}{second_strings[28]:10s}{second_strings[29]:10s}\
-{second_strings[30]:10s}{second_strings[31]:10s}{second_strings[32]:10s}\
-{second_strings[33]:6s}{second_strings[34]:6s}{second_strings[35]:6s}{second_strings[36]:6s}{second_strings[37]:9s}{second_strings[38]:9s}\
-{second_strings[39]:11s}{second_strings[40]:11s}{second_strings[41]:11s}{second_strings[42]:11s}{second_strings[43]:11s}{second_strings[44]:11s}{second_strings[45]:11s}\
-{second_strings[46]:11s}{second_strings[47]:11s}{second_strings[48]:11s}{second_strings[49]:11s}{second_strings[50]:11s}{second_strings[51]:11s}{second_strings[52]:11s}\
-{second_strings[53]:11s}{second_strings[54]:11s}{second_strings[55]:11s}{second_strings[56]:11s}{second_strings[57]:11s}{second_strings[58]:11s}\
-{gap}{second_strings[59]:15s}{second_strings[60]:10s}{second_strings[61]:15s}{second_strings[62]:10s}{second_strings[63]:15s}'
+    second_line = ''
+    for element in second_strings:
+        second_line += f'{element:15s}'
     
-
-
     catalogue.write('------------------------------------------------------------------------------------------------------------')
     catalogue.write('------------------------------------------------------------------------------------------------------------')
     catalogue.write('------------------------------------------------------------------------------------------------------------')
@@ -204,25 +208,16 @@ def write_catalogue(haloes, iteration_data, PYHALMA_OUTPUT):
     nhal = iteration_data['nhal']
     for ih in range(nhal):
         ih_values = [*haloes[ih].values()]
-        catalogue_line = f'{ih_values[0]:6d}{gap}{ih_values[1]:10d}{gap}{ih_values[2]:15.6e}{gap}\
-{ih_values[3]:10.2f}{gap}{ih_values[4]:10.2f}{gap}{ih_values[5]:10.2f}{gap}\
-{ih_values[6]:10.2f}{gap}{ih_values[7]:10.2f}{gap}{ih_values[8]:10.2f}{gap}\
-{ih_values[9]:10.2f}{gap}{ih_values[10]:10.2f}{gap}{ih_values[11]:10.2f}{gap}{ih_values[12]:10d}\
-{ih_values[13]:15.6e}{gap}{ih_values[14]:8.4f}{gap}\
-{ih_values[15]:15.6e}{gap}{ih_values[16]:15.6e}{gap}{ih_values[17]:15.6e}{gap}\
-{ih_values[18]:10.2f}{gap}{ih_values[19]:10.2f}{gap}{ih_values[20]:10.2f}{gap}\
-{ih_values[21]:10.2f}{gap}{ih_values[22]:10.2f}{gap}{ih_values[23]:10.2f}{gap}\
-{ih_values[24]:10.2f}{gap}{ih_values[25]:10.2f}{gap}{ih_values[26]:10.2f}{gap}\
-{ih_values[27]:10.2f}{gap}{ih_values[28]:10.2f}{gap}{ih_values[29]:10.2f}{gap}\
-{ih_values[30]:10.2f}{gap}{ih_values[31]:10.2f}{gap}{ih_values[32]:10.2f}{gap}\
-{ih_values[33]:6d}{gap}{ih_values[34]:6d}{gap}{ih_values[35]:6d}{gap}{ih_values[36]:6d}{gap}\
-{ih_values[37]:9.3f}{gap}{ih_values[38]:9.3f}{gap}{ih_values[39]:11.3e}{gap}{ih_values[40]:11.3e}{gap}\
-{ih_values[41]:11.2f}{gap}{ih_values[42]:11.2f}{gap}{ih_values[43]:11.2f}{gap}\
-{ih_values[44]:11.2f}{gap}{ih_values[45]:11.2f}{gap}{ih_values[46]:11.2f}{gap}\
-{ih_values[47]:11.2f}{gap}{gap}{ih_values[48]:11.2f}{gap}{ih_values[49]:11.2e}{gap}\
-{ih_values[50]:11.2e}{gap}{ih_values[51]:11.2e}{gap}{ih_values[52]:11.2e}{gap}{ih_values[53]:11.2f}\
-{ih_values[54]:11.2f}{ih_values[55]:11.2f}{ih_values[56]:11.2f}{ih_values[57]:11.2f}{ih_values[58]:11.2f}\
-{ih_values[59]:15.6e}{ih_values[60]:10d}{ih_values[61]:15.6e}{ih_values[62]:10.2f}{ih_values[63]:15.6e}'  
+        catalogue_line = ''
+        for element in ih_values:
+            if type(element) == int or type(element) == np.int32 or type(element) == np.int64:
+                catalogue_line += f'{element:15d}'
+            elif type(element) == float or type(element) == np.float32 or type(element) == np.float64:
+                if abs(np.log10(element)) >= 5.:
+                    catalogue_line += f'{element:15.2e}'
+                else:
+                    catalogue_line += f'{element:15.2f}'
+
         catalogue.write(catalogue_line)
         catalogue.write('\n')
     
@@ -332,7 +327,7 @@ if CALIPSO_FLAG:
     LUMG = np.zeros((N_AGES,N_Z))
     LUMR = np.zeros((N_AGES,N_Z))
     LUMI = np.zeros((N_AGES,N_Z))
-    # HERE WE CALCULATE ABSOLUTE MAGNITUDES (SINCE DLUM = 1 PC) AND THUS LUMINOSITIES
+    # HERE WE CALCULATE ABSOLUTE MAGNITUDES (SINCE DLUM = 10 PC) AND THUS LUMINOSITIES
     # Calculating luminosity in u,g,r filters of each SSP
     for iage in range(N_AGES):
         for iZ in range(N_Z):
@@ -409,10 +404,23 @@ print()
 #############################################################################################
 # LOOP OVER MASCLET SNAPSHOTS
 #############################################################################################
-    
+# Variables for accreted/in-situ mass calculation
+
+part_insitu_before2 = np.array([]) #For every particle, if it was insitu, two iterations before
+part_ih_before2 =  np.array([]) #For every particle, the halo it belonged to two iterations before
+part_oripas_before2 =  np.array([]) #For every particle, the oripas iteration two iterations before
+pro1_before2 = np.array([]) #For every halo, the main progenitor two iterations before
+
+part_insitu_before =  np.array([]) #For every particle, if it was insitu the previous iteration
+part_ih_before =  np.array([]) #For every particle, the halo it belonged to in the previous iteration
+part_oripas_before =  np.array([]) #For every particle, the oripas iteration before
+
+####################################
+
 oripas_before =  np.array([]) #For every halo, the oripas iteration before
 omm =  np.array([]) #Masses of the haloes in the iteration before
 cosmo_time_before = 0. #Time of the iteration before
+
 for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
     print()
     print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
@@ -440,6 +448,16 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
     dt = 0. #time step between iterations
     if it_count>0:
         dt = (cosmo_time - cosmo_time_before)*units.time_to_yr/1e9
+
+    else:
+        try:
+            grid_data = read_masclet.read_grids(iteration-STEP, path=SIMU_MASCLET, parameters_path=SIMU_MASCLET, digits=5, read_general=True)
+            cosmo_time_before = grid_data[1]
+            dt = (cosmo_time - cosmo_time_before)*units.time_to_yr/1e9
+        except:
+            pass
+
+    cosmo_time = grid_data[1]
 
     print(f'Cosmo time (Gyr): {cosmo_time*units.time_to_yr/1e9:.2f}')
     print(f'Redshift (z): {zeta:.2f}')
@@ -584,6 +602,22 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 print('     Done')
                 print()
             
+            #READ DM IF DM_FLAG and not (RPS_FLAG or ESCAPE_CLEANING)
+            if DM_FLAG and not (RPS_FLAG or ESCAPE_CLEANING):
+                #READ DM
+                print('     Reading DM file')
+                if FULL_DOMAIN_FLAG:
+                    masclet_dm_data = read_masclet.read_cldm(iteration, path = SIMU_MASCLET, parameters_path=SIMU_MASCLET, 
+                                                                digits=5, max_refined_level=1000, output_deltadm = False,
+                                                                output_position=True, output_velocity=False, output_mass=True)
+                else:
+                    read_region = ("box",X1,X2,Y1,Y2,Z1,Z2)
+                    masclet_dm_data = read_masclet.lowlevel_read_cldm(iteration, path = SIMU_MASCLET, parameters_path=SIMU_MASCLET, 
+                                                                digits=5, max_refined_level=1000, output_deltadm = False,
+                                                                output_position=True, output_velocity=False, output_mass=True, read_region=read_region)
+                print('     Done')
+                print()
+
             #READ ASOHF STELLAR AND DARK MATTER CATALOGUES
             if ASOHF_FLAG:
                 print('     Reading ASOHF files')
@@ -615,7 +649,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                     print('     Done')
 
             # BUILD DARK MATTER KDTREE FOR POT. ENERGY PURPOSES
-            if masclet_dm_data is not None:
+            if DM_FLAG or RPS_FLAG or POT_ENERGY_FLAG:
                 ##############################################
                 print('     Building DM KDtree')
                 t0 = time.time()
@@ -809,6 +843,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             density_peak_y = np.zeros(num_halos)
             density_peak_z = np.zeros(num_halos)
             star_formation_masses = np.zeros(num_halos)
+            insitu_masses = np.zeros(num_halos)
             sig_3D = np.zeros(num_halos)
             sig_1D_x = np.zeros(num_halos)
             sig_1D_y = np.zeros(num_halos)
@@ -895,12 +930,11 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 
                 #SÉRSIC INDEX
                 sersic_indices[ihal] = halo_properties.simple_sersic_index(
-                                                                            part_list, st_x, st_y, st_z, density_peak_x[ihal], 
-                                                                            density_peak_y[ihal], density_peak_z[ihal], 
+                                                                            part_list, st_x, st_y, st_z, center_x[ihal], 
+                                                                            center_y[ihal], center_z[ihal], 
                                                                             rad05[ihal], LL, num_particles[ihal]
                                                                             )
-                if it_count > 0:
-                    star_formation_masses[ihal] = halo_properties.star_formation(part_list, st_mass, st_age, cosmo_time*units.time_to_yr/1e9, dt)
+                star_formation_masses[ihal] = halo_properties.star_formation(part_list, st_mass, st_age, cosmo_time*units.time_to_yr/1e9, dt)
 
                 #SIGMA
                 sig_3D[ihal] = halo_properties.sigma_effective(part_list, rad05[ihal], st_x, st_y, st_z, st_vx, st_vy, st_vz, cx, cy, cz, 
@@ -994,15 +1028,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 ############################################################################################################
                 #First step
                 ############################################################################################################
-                @numba.njit(fastmath = True)
-                def match_finder(R1, x1, y1, z1, R2, x2, y2, z2, asohf_matches, thres = 1.):
-                    dim2 = len(R2)
-                    for j in range(dim2):
-                        if (np.sqrt((x1-x2[j])**2 + (y1-y2[j])**2 + (z1-z2[j])**2) < thres*(R1 + R2[j]) +  LL):
-                            asohf_matches[j] = 1
-                    return asohf_matches
-                
-                
+
                 asohf_match_thres = 1.
                 asohf_already_matched = np.zeros((asohf_st_num), dtype = np.int32)
                 for ih in tqdm(range(num_halos)):
@@ -1020,6 +1046,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                         matches_masses = asohf_st_data['Mhalf'][this_halo_matches]
                         the_match = this_halo_matches[np.argmax(matches_masses)]
 
+                        #If the match is already matched, find the next best match
                         while asohf_already_matched[the_match] == 1:
                             matches_masses[np.argmax(matches_masses)] = 0
                             the_match = this_halo_matches[np.argmax(matches_masses)]
@@ -1035,18 +1062,6 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 ############################################################################################################
                 #Second step (parallel, as there are lots of DM haloes)
                 ############################################################################################################
-                @numba.njit(fastmath = True)
-                def DM_halo_finder(R1, x1, y1, z1, R2, x2, y2, z2, asohf_dm_matches, matches_distance, thres = 1., fact_Rvir = 0.5):
-                    dim2 = len(x2)
-                    for j in range(dim2):
-                        dist = np.sqrt((x1-x2[j])**2 + (y1-y2[j])**2 + (z1-z2[j])**2)
-                        if dist < (thres*R1 + fact_Rvir*R2[j]):
-                            asohf_dm_matches[j] = 1
-                            matches_distance[j] = dist
-
-                    return asohf_dm_matches, matches_distance
-                
-
                 haloes_without_match = np.arange(num_halos)[asohf_IDs == -1]
 
                 #print('Haloes matched with step 1: ', np.count_nonzero(asohf_IDs != -1), 'out of', num_halos)
@@ -1084,7 +1099,10 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                         asohf_Rvir[ih] = 0.
 
                 #print('Haloes matched after step 2: ', np.count_nonzero(asohf_IDs != -1), 'out of', num_halos)
+                print('     Done')
 
+            if DM_FLAG:
+                print(f'     Searching for dark matter mass inside {FACTOR_R12_DM:.2f} R_1/2')
                 ############################################################################################################
                 #Third step
                 ############################################################################################################
@@ -1102,18 +1120,17 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
 
                 for ih in tqdm(range(num_halos)):
                     darkmatter_mass[ih] = np.sum(dm_mass[dm_kdtree.query_ball_point( [center_x[ih], 
-                                                                                      center_y[ih], 
-                                                                                      center_z[ih]], 
-                                                                                      FACTOR_R12_DM*rad05[ih],
-                                                                                      workers = NCORE)
-                                                                                     ]
-                                                                                     )
+                                                                                        center_y[ih], 
+                                                                                        center_z[ih]], 
+                                                                                        FACTOR_R12_DM*rad05[ih],
+                                                                                        workers = NCORE)
+                                                                                        ]
+                                                                                        )
 
-                print('     Done')
-                    
-                ############################################################################################################
-                ############################################################################################################
-                ############################################################################################################
+
+            ############################################################################################################
+            ############################################################################################################
+            ############################################################################################################
             ############################################################################################################
 
             if len(new_groups)>0:
@@ -1125,6 +1142,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 if ASOHF_FLAG:
                     print(f'CHECK min, max in ASOHF DM mass: {np.min(asohf_mass):.2e} {np.max(asohf_mass):.2e}')
                     print(f'CHECK number of matches with ASOHF DM haloes: {np.count_nonzero(asohf_IDs != -1)}', 'out of', num_halos)
+                if DM_FLAG:
                     print(f'CHECK min, max in dark matter mass inside {int(FACTOR_R12_DM)} R_1/2:   {np.min(darkmatter_mass):.2e} {np.max(darkmatter_mass):.2e}')
                 print()
 
@@ -1239,6 +1257,56 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             print('-------> DONE <-------')
 
             
+            ############################################################################################################
+            ############################################################################################################
+            # ACCRETION SECTION
+            print()
+            print('-------> ACCRETION <-------')
+
+            for ih, halo in enumerate(new_groups):
+                # #CONSIDER ALL STARS WITHIN 4*R_1/2 OF THE HALO CENTER and STARS BELONGING TO THE FoF group
+                # dist_condition = np.sqrt((center_x[ih]-st_x)**2 + (center_y[ih]-st_y)**2 + (center_z[ih]-st_z)**2) < FACTOR_R12_DM*rad05[ih]
+                # particles_inside = np.arange(len(st_x))[dist_condition]
+                # part_list = np.concatenate((halo, particles_inside))
+                # part_list = np.unique(part_list)
+
+                #JUST FoF GROUP
+                part_list = np.copy(halo)
+
+                #Divide between recently formed and old stars
+                sf_part = part_list[st_age[part_list] > (cosmo_time*units.time_to_yr/1e9 - 1.1*dt)]
+                old_part = part_list[st_age[part_list] <= (cosmo_time*units.time_to_yr/1e9 - 1.1*dt)]
+
+                #Recently formed are in situ by assumption
+                st_insitu[sf_part] = 1
+
+                #FOR NOT RECENTLY FORMED STARS, CHECK IF THEY WERE IN SITU IN THE PREVIOUS ITERATION
+                if pro1[ih] > 0:
+                    #oripas of particles that were in pro1 and were in situ
+                    condition1 = part_ih_before == pro1[ih]
+                    condition2 = part_insitu_before == 1
+                    oripas_in_situ_before = part_oripas_before[condition1 * condition2]
+
+                    #check if the oripas of the particles in old_part are in oripas_in_situ_before
+                    st_insitu[old_part] = np.in1d(st_oripa[old_part], oripas_in_situ_before, assume_unique = True).astype(int)
+
+                    #LOOK ALSO 2 ITERATIONS BEFORE:
+                    if pro1_before2[pro1[ih]-1] > 0:
+                        #oripas of particles that were in pro1(it-2) and were in situ
+                        condition1 = part_ih_before2 == pro1_before2[pro1[ih]-1]
+                        condition2 = part_insitu_before2 == 1
+                        oripas_in_situ_before2 = part_oripas_before2[condition1 * condition2]
+                        #check if the oripas of the particles in old_part are in oripas_in_situ_before
+                        two_its_before = np.in1d(st_oripa[old_part], oripas_in_situ_before2, assume_unique = True).astype(int)
+                        st_insitu[old_part] = np.logical_or(st_insitu[old_part], two_its_before).astype(int)  
+
+                insitu_masses[ih] = np.sum(st_mass[part_list]*st_insitu[part_list])   
+
+            print('-------> DONE <-------')
+            ############################################################################################################
+            ############################################################################################################
+
+
             ###########################################################
             ####### SORTING BY NUMBER OF PARTICLES ##################
             ###########################################################
@@ -1252,6 +1320,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             which_cell_list_z = which_cell_list_z[argsort_part]
             masses = masses[argsort_part]
             star_formation_masses = star_formation_masses[argsort_part]
+            insitu_masses = insitu_masses[argsort_part]
             rmax = rmax[argsort_part]
             rad05 = rad05[argsort_part]
             rad05_x = rad05_x[argsort_part]
@@ -1262,6 +1331,9 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             sig_1D_y = sig_1D_y[argsort_part]
             sig_1D_z = sig_1D_z[argsort_part]
             specific_angular_momentum = specific_angular_momentum[argsort_part]
+            specific_angular_momentum_x = specific_angular_momentum_x[argsort_part]
+            specific_angular_momentum_y = specific_angular_momentum_y[argsort_part]
+            specific_angular_momentum_z = specific_angular_momentum_z[argsort_part]
             center_x = center_x[argsort_part]
             center_y = center_y[argsort_part]
             center_z = center_z[argsort_part]
@@ -1316,6 +1388,21 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 oripas_before.append(oripas)
             ##########################################
             
+            ##########################################
+            #UPDATE INSITU AND ORIPAS BEFORE FOR NEXT ITERATION
+            part_ih_before2 = np.copy(part_ih_before) 
+            part_oripas_before2 = np.copy(part_oripas_before)
+            part_insitu_before2 = np.copy(part_insitu_before)
+            pro1_before2 = np.copy(pro1)
+
+            # Save to which halo each particle belongs to, oripas and insitu
+            part_ih_before = np.zeros(len(st_x), dtype=np.int32)
+            part_oripas_before = np.copy(st_oripa)
+            part_insitu_before = np.copy(st_insitu)
+            for isort_part in range(len(argsort_part)):
+                halo = new_groups[argsort_part[isort_part]]
+                part_ih_before[halo] = isort_part + 1
+            ##########################################
 
             ############################################################################################################
             # CALIPSO BLOCK
@@ -1369,7 +1456,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 # NOTICE HERE DLUM IS NOT 1 PC, AND HENCE MAGNITUDES HERE ARE NOT ABSOLUTE
                 cosmo = cosmology.FlatLambdaCDM(H0=ACHE*100, Om0=OMEGA0)
                 dlum = abs(cosmo.luminosity_distance(zeta).value)
-                daa = abs(cosmo.angular_diameter_distance(zeta).value) # if zeta < 0, not defined
+                daa = abs(cosmo.angular_diameter_distance(zeta).value) # Mpc
                 arcsec2kpc = daa*1e3*(acos(-1)/180.)/3600. #from angular size to kpc
                 
                 # Area of pixel in arcsec^2
@@ -1377,7 +1464,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 area_com = res * res
                 area_pys=area_com/((1.+zeta)*(1.+zeta))
                 area_arc=area_pys/(arcsec2kpc*arcsec2kpc)
-                print('zeta, dist_lum, arcsec2kpc:', zeta, dlum, arcsec2kpc)
+                print('zeta, dist_lum(Mpc), arcsec2kpc, area_arc:', zeta, dlum, arcsec2kpc, area_arc)
                 print()
 
                 # List with calipso input to pass to pycalipso.main
@@ -1403,15 +1490,6 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                     velx = st_vx[halo] - velocities_x[ihal] 
                     vely = st_vy[halo] - velocities_y[ihal] #LOS velocity of halo particles
                     velz = st_vz[halo] - velocities_z[ihal]
-
-                    # # CREATE THE GRID with maximum resolution applied to the halo in the simulation
-                    # box = [CX[ihal] - RMAX[ihal], CX[ihal] + RMAX[ihal], CY[ihal] - RMAX[ihal], 
-                    #        CY[ihal] + RMAX[ihal], CZ[ihal] - RMAX[ihal], CZ[ihal] + RMAX[ihal]]
-                    
-                    # which_patches = tools.which_patches_inside_box(box, patchnx, patchny, patchnz, patchrx, patchry, patchrz, npatch, L, nx)
-                    # patch_level = tools.create_vector_levels(npatch)
-                    # max_level = np.max(patch_level[which_patches])
-                    # res_minimum_cell = L / nx / 2**max_level * 1e3 # maximum resolution of the simulation in kpc
 
                     grid_edges = np.arange(-rmax[ihal]*1e3 - res, rmax[ihal]*1e3 + res, res)
                     grid_centers = (grid_edges[1:] + grid_edges[:-1]) / 2
@@ -1485,7 +1563,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                     file_image_array_x = np.zeros((ncell*ncell+1, N_F*3))
                     file_image_array_x[0, 0] = ncell #HEADER
                     file_image_array_x[0, 1] = ncell
-                    file_image_array_x[0, 2] = LL
+                    file_image_array_x[0, 2] = LL*1e3
                     for i_f in range(N_F):
                         file_image_array_x[1:, i_f] = magf[:,:,i_f].reshape((ncell*ncell))
                         file_image_array_x[1:, N_F+i_f] = fluxf[:,:,i_f].reshape((ncell*ncell))
@@ -1511,9 +1589,9 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                         sbf, magf, fluxf    )  = pycalipso.main(calipso_input, star_particle_data,
                                                             ncell, vel_LOS, tam_i, tam_j, effective_radius, rete)
                     
-
                     # SÉRSIC INDEX WITH LIGHT (g filter SDSS)
                     # FIRST: LINEAR INTERPOLATION OF THE FLUX IN THE GRID
+
                     flux_interp = RegularGridInterpolator((grid_centers, grid_centers), fluxf[:,:, 1], method='linear')
                     flux_interpolated = flux_interp((x_meshgrid_interp, y_meshgrid_interp))
 
@@ -1543,7 +1621,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                     file_image_array_y = np.zeros((ncell*ncell+1, N_F*3))
                     file_image_array_y[0, 0] = ncell #HEADER
                     file_image_array_y[0, 1] = ncell
-                    file_image_array_y[0, 2] = LL
+                    file_image_array_y[0, 2] = LL*1e3
                     for i_f in range(N_F):
                         file_image_array_y[1:, i_f] = magf[:,:,i_f].reshape((ncell*ncell))
                         file_image_array_y[1:, N_F+i_f] = fluxf[:,:,i_f].reshape((ncell*ncell))
@@ -1567,7 +1645,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                         central_sb_u, central_sb_g, central_sb_r, central_sb_i,
                         gr, ur,
                         sbf, magf, fluxf    )  = pycalipso.main(calipso_input, star_particle_data,
-                                                                ncell, vel_LOS, tam_i, tam_j, effective_radius, rete)
+                                                            ncell, vel_LOS, tam_i, tam_j, effective_radius, rete)
                     
                     # SÉRSIC INDEX WITH LIGHT (g filter SDSS)
                     # FIRST: LINEAR INTERPOLATION OF THE FLUX IN THE GRID
@@ -1601,7 +1679,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                     file_image_array_z = np.zeros((ncell*ncell+1, N_F*3))
                     file_image_array_z[0, 0] = ncell #HEADER
                     file_image_array_z[0, 1] = ncell
-                    file_image_array_z[0, 2] = LL
+                    file_image_array_z[0, 2] = LL*1e3
                     for i_f in range(N_F):
                         file_image_array_z[1:, i_f] = magf[:,:,i_f].reshape((ncell*ncell))
                         file_image_array_z[1:, N_F+i_f] = fluxf[:,:,i_f].reshape((ncell*ncell))
@@ -1681,6 +1759,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         halo['Mcoldgas'] = cold_unbound_gas_masses[ih]
         halo['Mhotgas'] = hot_unbound_gas_masses[ih]
         halo['Msfr'] = star_formation_masses[ih]
+        halo['Min'] = insitu_masses[ih]
         halo['Rmax'] = rmax[ih]*1e3 #kpc
         halo['R'] = rad05[ih]*1e3
         halo['R_1d'] = (rad05_x[ih] + rad05_y[ih] + rad05_z[ih])/3 *1e3
@@ -1693,6 +1772,9 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         halo['sigma_v_1dy'] = sig_1D_y[ih]
         halo['sigma_v_1dz'] = sig_1D_z[ih]
         halo['L'] = specific_angular_momentum[ih]*1e3
+        halo['Lx'] = specific_angular_momentum_x[ih]*1e3
+        halo['Ly'] = specific_angular_momentum_y[ih]*1e3
+        halo['Lz'] = specific_angular_momentum_z[ih]*1e3
         halo['vx'] = velocities_x[ih]
         halo['vy'] = velocities_y[ih]
         halo['vz'] = velocities_z[ih]
@@ -1750,7 +1832,12 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         np.save(PYHALMA_OUTPUT + '/stellar_particles'+string_it+'.npy', all_particles_in_haloes)
     ###########################################
 
-    
+###########################################
+#Clean all variables
+del st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, st_age, st_met, st_oripa, st_insitu
+del st_insitu, st_oripa, st_insitu
+gc.collect()
+###########################################
 ########## ########## ########## ########## ########## 
 ########## ########## ########## ########## ########## 
 ########## ########## ########## ########## ########## 

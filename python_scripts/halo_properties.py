@@ -1,5 +1,6 @@
 import numpy as np
 from numba import njit, prange, get_num_threads
+import numba
 from scipy.optimize import curve_fit
 from scipy.spatial import KDTree
 from sklearn.metrics import r2_score
@@ -358,7 +359,6 @@ part_list, st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, factor_v, rho_B
 
 
 
-
 @njit(fastmath=True)
 def half_mass_radius(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass):
     npart = len(part_list)
@@ -388,68 +388,6 @@ def half_mass_radius(cx, cy, cz, M, part_list, st_x, st_y, st_z, st_mass):
 
     return RAD05
 
-
-@njit(fastmath=True)
-def half_mass_radius_pop3(cx, cy, cz, M, part_list_pop3, st_x, st_y, st_z, st_mass):
-    npart_pop3 = len(part_list_pop3)
-    #FIRST SORT PARTICLES BY DISTANCE TO CM
-    RAD_part = np.zeros(npart_pop3)
-    for ip in range(npart_pop3):
-        ipp = part_list_pop3[ip]
-        dx = cx - st_x[ipp]
-        dy = cy - st_y[ipp]
-        dz = cz - st_z[ipp]
-        dist = (dx**2 + dy**2 + dz**2)**0.5
-        RAD_part[ip] = dist
-
-    RAD_sorted_index = np.argsort(RAD_part)
-    part_list_sorted = part_list_pop3[RAD_sorted_index]
-    RAD_part = np.sort(RAD_part)
-    RAD05 = np.min(RAD_part)
-    mass_sum = 0.
-    for ip in range(npart_pop3):
-        ipp = part_list_sorted[ip]
-        mass_sum += st_mass[ipp]
-        if mass_sum > 0.5*M:
-            break
-        else:
-            RAD05 = RAD_part[ip]
-
-    return RAD05
-
-
-
-@njit(fastmath=True)
-def half_mass_radius_pop3_SFR(cx, cy, cz, M, part_list_pop3, st_x, st_y, st_z, 
-                              st_mass, st_age, cosmo_time, dt):
-
-    part_list_pop3 = part_list_pop3[st_age[part_list_pop3] > (cosmo_time-1.1*dt)] #10% tolerance
-    npart_pop3 = len(part_list_pop3)
-
-    #FIRST SORT PARTICLES BY DISTANCE TO CM
-    RAD_part = np.zeros(npart_pop3)
-    for ip in range(npart_pop3):
-        ipp = part_list_pop3[ip]
-        dx = cx - st_x[ipp]
-        dy = cy - st_y[ipp]
-        dz = cz - st_z[ipp]
-        dist = (dx**2 + dy**2 + dz**2)**0.5
-        RAD_part[ip] = dist
-
-    RAD_sorted_index = np.argsort(RAD_part)
-    part_list_sorted = part_list_pop3[RAD_sorted_index]
-    RAD_part = np.sort(RAD_part)
-    RAD05 = np.min(RAD_part)
-    mass_sum = 0.
-    for ip in range(npart_pop3):
-        ipp = part_list_sorted[ip]
-        mass_sum += st_mass[ipp]
-        if mass_sum > 0.5*M:
-            break
-        else:
-            RAD05 = RAD_part[ip]
-
-    return RAD05
 
 
 @njit(fastmath=True)
@@ -971,8 +909,6 @@ def simple_sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05, LL, npart)
     # COMPUTED IN ELLIPTICAL BINS. THIS IS NOT IMPLEMENTED YET.
     ##################################################################################################
 
-    ### ALL DISTANCES HAVE TO BE PHYSICAL, NOT COMOVING --> MULTIPLY BY rete (SCALE FACTOR)
-
     #RADIAL LIMITS
     R_fit_min = 0.*R05
     R_fit_max = 2.*R05
@@ -1006,16 +942,12 @@ def simple_sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05, LL, npart)
 
 
     #RADIAL BINNING
-    dR = LL #0.1*R05 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    dR = LL/4. #0.1*R05 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     R_list = np.arange(R_fit_min, (int(R_fit_max/dR) + 2)*dR, dR)
     R_list_centers = (R_list[1:] + R_list[:-1])/2.
 
     surface_density_xy, surface_density_xz, surface_density_yz = simple_surface_density(R_list_centers, dR, x_pos, y_pos, z_pos)
 
-    # #TEST PLOT 
-    # if npart == 14430:
-    #     plt.plot(R_list_centers, surface_density_xy, 'k.')
-    #     plt.show()
 
     # # APPLYING A GAUSSIAN FILTER TO SMOOTH THE SURFACE DENSITY
     # surface_density_xy = gaussian_filter(surface_density_xy, sigma = 0.5)

@@ -95,7 +95,7 @@ contains
                 wave2(lpix) = waves
                 ssp2(lpix) = fluxs
             endif
-
+            
             fluxtot(iw) = fluxtot(iw) + mass(ip)*SSP(iage, imet, iw)
             flux_cell(tam_ii, tam_jj, iw) = flux_cell(tam_ii, tam_jj, iw) + mass(ip)*SSP(iage, imet, iw)
             flux_cell_sig(tam_ii, tam_jj, iw) = flux_cell_sig(tam_ii, tam_jj, iw) + mass(ip)*ssp2(iw)
@@ -215,25 +215,22 @@ contains
     ! mag_AB_bandpass = -2.5*log10(Int1/Int2) - 2.4
 
     !!! In lambda, the integrals are:
-    ! Int1 = Integral(f_lambda * R_lambda * lambda^3 * dlambda)
-    ! Int2 = Integral(R_lambda * lambda * dlambda) with lambda in Amstrongs and f_lambda in erg/s/cm^2/Ams
-
-    !!! In nus, the integrals are:
-    ! Int1 = Integral(f_nu * R_nu * dlognu)
-    ! Int2 = Integral(R_nu * dlognu)
+    ! Int1 = Integral(f_lambda * R_lambda * lambda * dlambda)
+    ! Int2 = Integral(R_lambda / lambda * dlambda) with lambda in Amstrongs and f_lambda in erg/s/cm^2/Ams
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-    call trapecio(f = fs_new*rfilt*wfilt**3, x = wfilt, n = nfilt, sum = intup)
-    call trapecio(f = rfilt*wfilt, x = wfilt, n = nfilt, sum = intdown)
+    call trapecio(f = fs_new*rfilt*wfilt, x = wfilt, n = nfilt, sum = intup)
+    call trapecio(f = rfilt/wfilt, x = wfilt, n = nfilt, sum = intdown)
     
-    mag = -2.5*log10(intup/intdown) - 2.4
+    mag = -2.5*log10(intup/intdown) - 2.4 
 
     !!!!! One can also use the isophotal frecuency of the bandpass and evaluate the monocromatic AB magnitude:
     ! mag_AB_monocromatic = -2.5*log10(F_nu) - 48.6, with F_nu in erg/s/cm^2/Hz
     !!!!! In theory, both ways of calculating the magnitude, should give the same result.
 
     ! NOW CALCULATING THE TOTAL FLUX IN THIS BAND:
-    call trapecio(f = fs_new*rfilt, x = wfilt, n = nfilt, sum = sum_s)
+    call trapecio(f = fs_new*rfilt, x = wfilt, n = nfilt, sum = intup)
+    sum_s = intup
 
     END SUBROUTINE
 
@@ -266,7 +263,7 @@ contains
     !f2py depend(nmaxf, nf) wf, rf
     !f2py depend(nv) wv, fv
 
-    ! unit conversion from lum[erg/s] to flux[erg/s/cm²] for sum_s, which is in units of  SOLAR LUMINOSITY
+    ! unit conversion from lum[erg/s/A] to flux[erg/s/cm²/A] for sum_s, which is in units of  SOLAR LUMINOSITY
     cfact = 5. * log10(1.7685*1e8 * dlum ) !ESTO CONVIERTE sum_s DENTRO DE mag EN UN FLUJO (dividiendo por 4pidlum^2)
                                             !pasa dlum de MPC a CM y ademas pasa de Lo a 3.826*10^33
     
@@ -278,6 +275,7 @@ contains
     ws_min = ws(1)
     ws_max = ws(ns)
 
+    ! c in ams
     do i_f=1,nf
         if ( ( wf(1,i_f) > ws_min ) .and. ( wf(nlf(i_f),i_f) < ws_max ) ) then
             sum_s = 0.
@@ -342,7 +340,7 @@ contains
     SBf(:,:,:) = 0.
     magf(:,:,:) = 0.
     fluxf(:,:,:) = 0.
-
+        
     !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(tam_ii, tam_jj, fmag, flux)
     !$OMP DO REDUCTION(+:SBf, magf, fluxf)
     do tam_jj = 1,ny
