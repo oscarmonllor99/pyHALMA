@@ -6,6 +6,9 @@ from scipy.spatial import KDTree
 from sklearn.metrics import r2_score
 from masclet_framework import units, particles, particle2grid
 import multiprocessing as mp
+import matplotlib.pyplot as plt
+from scipy.stats import binned_statistic_2d, binned_statistic
+from scipy.ndimage import gaussian_filter1d
 ############################################
 from fortran_modules import particle
 from python_scripts import halo_gas
@@ -896,8 +899,23 @@ def simple_surface_density(R_list_centers, dR, x_pos, y_pos, z_pos):
     return surface_density_xy, surface_density_xz, surface_density_yz
 
 
+def get_radial_profile(field2D, x0, y0, nx, ny, xedges, yedges, rbins):
+    rprofile = np.zeros(len(rbins)-1)
+    rcounter = np.zeros(len(rbins)-1)
+    for i in range(nx):
+        xc = (xedges[i] + xedges[i+1])/2 - x0
+        for j in range(ny):
+            yc = (yedges[j] + yedges[j+1])/2 - y0
+            r = np.sqrt(xc**2 + yc**2)
+            ir = np.digitize(r, rbins) - 1
+            rprofile[ir] += field2D[i, j]
+            rcounter[ir] += 1
 
-def simple_sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05, LL, npart):
+    rprofile = np.where(rcounter == 0., 0., rprofile/rcounter)
+    return rprofile
+
+
+def simple_sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05, LL, npart, faceOn = False, lx = None, ly = None, lz = None):
     ##################################################################################################
     # THIS FUNCTION COMPUTES THE SERSIC INDEX OF THE STELLAR HALO ASSUMING CONTOURS ARE CIRCULAR.
     # IT COUNTS THE NUMBER OF PARTICLES IN RADIAL BINS AND FITS A SERSIC PROFILE TO THE SURFACE DENSITY
@@ -913,134 +931,234 @@ def simple_sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05, LL, npart)
     R_fit_min = 0.*R05
     R_fit_max = 2.*R05
 
-    #ONLY CONSIDER PARTICLES WITHIN R_fit_min and R_fit_max
-    x_pos = st_x[part_list]-cx 
-    y_pos = st_y[part_list]-cy
-    z_pos = st_z[part_list]-cz
-    # if len(x_pos) > 300:
-    #     plt.imshow(np.histogram2d(x_pos, y_pos, bins = 50)[0], origin = 'lower')
-    #     plt.Circle((0,0), R_fit_max, color = 'r')
-    #     plt.show()
-    R_pos = ((x_pos)**2 + (y_pos)**2 + (z_pos)**2)**0.5
+    if not faceOn:
 
-    part_list = part_list[R_pos < R_fit_max]
-    x_pos = x_pos[R_pos < R_fit_max]
-    y_pos = y_pos[R_pos < R_fit_max]
-    z_pos = z_pos[R_pos < R_fit_max]
-    R_pos = ((x_pos)**2 + (y_pos)**2 + (z_pos)**2)**0.5 
+        #ONLY CONSIDER PARTICLES WITHIN R_fit_min and R_fit_max
+        x_pos = st_x[part_list]-cx 
+        y_pos = st_y[part_list]-cy
+        z_pos = st_z[part_list]-cz
+        R_pos = ((x_pos)**2 + (y_pos)**2 + (z_pos)**2)**0.5
 
-    part_list = part_list[R_pos > R_fit_min]
-    x_pos = x_pos[R_pos > R_fit_min]
-    y_pos = y_pos[R_pos > R_fit_min]
-    z_pos = z_pos[R_pos > R_fit_min]
-    R_pos = ((x_pos)**2 + (y_pos)**2 + (z_pos)**2)**0.5 
+        part_list = part_list[R_pos < R_fit_max]
+        x_pos = x_pos[R_pos < R_fit_max]
+        y_pos = y_pos[R_pos < R_fit_max]
+        z_pos = z_pos[R_pos < R_fit_max]
+        R_pos = ((x_pos)**2 + (y_pos)**2 + (z_pos)**2)**0.5 
 
-    # #TEST PLOT histogram with bin size = LL 
-    # if npart == 14430:
-    #     plt.hist2d(x_pos, y_pos, bins = int(2*R_fit_max/LL) + 1)
-    #     plt.show()
+        part_list = part_list[R_pos > R_fit_min]
+        x_pos = x_pos[R_pos > R_fit_min]
+        y_pos = y_pos[R_pos > R_fit_min]
+        z_pos = z_pos[R_pos > R_fit_min]
+        R_pos = ((x_pos)**2 + (y_pos)**2 + (z_pos)**2)**0.5 
 
+        #RADIAL BINNING
+        dR = LL/4. #0.1*R05 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        R_list = np.arange(R_fit_min, (int(R_fit_max/dR) + 2)*dR, dR)
+        R_list_centers = (R_list[1:] + R_list[:-1])/2.
 
-    #RADIAL BINNING
-    dR = LL/4. #0.1*R05 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    R_list = np.arange(R_fit_min, (int(R_fit_max/dR) + 2)*dR, dR)
-    R_list_centers = (R_list[1:] + R_list[:-1])/2.
+        surface_density_xy, surface_density_xz, surface_density_yz = simple_surface_density(R_list_centers, dR, x_pos, y_pos, z_pos)
 
-    surface_density_xy, surface_density_xz, surface_density_yz = simple_surface_density(R_list_centers, dR, x_pos, y_pos, z_pos)
-
-
-    # # APPLYING A GAUSSIAN FILTER TO SMOOTH THE SURFACE DENSITY
-    # surface_density_xy = gaussian_filter(surface_density_xy, sigma = 0.5)
-    # surface_density_xz = gaussian_filter(surface_density_xz, sigma = 0.5)
-    # surface_density_yz = gaussian_filter(surface_density_yz, sigma = 0.5)
-
-    # FIT THE TAIL: FROM SUPREME TO R_fit_max
-    # FIND THE PEAK OF THE SURFACE DENSITY
-    iRmax = np.argmax(surface_density_xy)
-    R_list_centers = R_list_centers[iRmax:]
-    surface_density_xy = surface_density_xy[iRmax:]
-    surface_density_xz = surface_density_xz[iRmax:]
-    surface_density_yz = surface_density_yz[iRmax:]
+        # FIT THE TAIL: FROM SUPREME TO R_fit_max
+        # FIND THE PEAK OF THE SURFACE DENSITY
+        iRmax = np.argmax(surface_density_xy)
+        R_list_centers = R_list_centers[iRmax:]
+        surface_density_xy = surface_density_xy[iRmax:]
+        surface_density_xz = surface_density_xz[iRmax:]
+        surface_density_yz = surface_density_yz[iRmax:]
 
 
-    
-    #FITTING THE SERSIC PROFILE
-    def sersic(R, Re, Ie, n):
-        bn = 2*n - 1/3 + 4/(405*n)
-        return Ie*np.exp( -bn*( (R/Re)**(1/n) - 1 ) )
+        #FITTING THE SERSIC PROFILE
+        def sersic(R, Re, Ie, n):
+            bn = 2*n - 1/3 + 4/(405*n)
+            return Ie*np.exp( -bn*( (R/Re)**(1/n) - 1 ) )
 
-    guess_xy = [R05, surface_density_xy[0], 1.]
-    guess_xz = [R05, surface_density_xz[0], 1.]
-    guess_yz = [R05, surface_density_yz[0], 1.]
+        guess_xy = [R05, surface_density_xy[0], 1.]
+        guess_xz = [R05, surface_density_xz[0], 1.]
+        guess_yz = [R05, surface_density_yz[0], 1.]
 
-    #FIT XY
-    try:
-        param_xy, _ = curve_fit(sersic, R_list_centers, surface_density_xy, p0 = guess_xy)
-        n_xy = param_xy[2]
-        predic_xy = sersic(R_list_centers, *param_xy)
-        r2_xy = r2_score(surface_density_xy, predic_xy)
-    except:
-        n_xy = np.nan
-        r2_xy = np.nan
+        #FIT XY
+        try:
+            param_xy, _ = curve_fit(sersic, R_list_centers, surface_density_xy, p0 = guess_xy)
+            n_xy = param_xy[2]
+            predic_xy = sersic(R_list_centers, *param_xy)
+            r2_xy = r2_score(surface_density_xy, predic_xy)
+        except:
+            n_xy = np.nan
+            r2_xy = np.nan
 
-    #FIT XZ
-    try:
-        param_xz, _ = curve_fit(sersic, R_list_centers, surface_density_xz, p0 = guess_xz)
-        n_xz = param_xz[2]
-        predic_xz = sersic(R_list_centers, *param_xz)
-        r2_xz = r2_score(surface_density_xz, predic_xz)
-    except:
-        n_xz = np.nan
-        r2_xz = np.nan
+        #FIT XZ
+        try:
+            param_xz, _ = curve_fit(sersic, R_list_centers, surface_density_xz, p0 = guess_xz)
+            n_xz = param_xz[2]
+            predic_xz = sersic(R_list_centers, *param_xz)
+            r2_xz = r2_score(surface_density_xz, predic_xz)
+        except:
+            n_xz = np.nan
+            r2_xz = np.nan
 
-    #FIT YZ
-    try:
-        param_yz, _ = curve_fit(sersic, R_list_centers, surface_density_yz, p0 = guess_yz)
-        n_yz = param_yz[2]
-        predic_yz = sersic(R_list_centers, *param_yz)
-        r2_yz = r2_score(surface_density_yz, predic_yz)
-    except:
-        n_yz = np.nan
-        r2_yz = np.nan
+        #FIT YZ
+        try:
+            param_yz, _ = curve_fit(sersic, R_list_centers, surface_density_yz, p0 = guess_yz)
+            n_yz = param_yz[2]
+            predic_yz = sersic(R_list_centers, *param_yz)
+            r2_yz = r2_score(surface_density_yz, predic_yz)
+        except:
+            n_yz = np.nan
+            r2_yz = np.nan
 
-    #CHECK UNUSUAL VALUES OF n
-    if n_xy < 0.2 or n_xy > 30.:
-        n_xy = np.nan
-    if n_xz < 0.2 or n_xz > 30.:
-        n_xz = np.nan
-    if n_yz < 0.2 or n_yz > 30.:
-        n_yz = np.nan
+        #CHECK UNUSUAL VALUES OF n
+        if n_xy < 0.2 or n_xy > 30.:
+            n_xy = np.nan
+        if n_xz < 0.2 or n_xz > 30.:
+            n_xz = np.nan
+        if n_yz < 0.2 or n_yz > 30.:
+            n_yz = np.nan
 
-    # #PLOT THE 3 FITS TO CHECK, IF THEY SUCCEDED
-    # if len(x_pos) > 300:
-    #     print('n_xy = ', n_xy, 'r2_xy = ', r2_xy)
-    #     print('n_xz = ', n_xz, 'r2_xz = ', r2_xz)
-    #     print('n_yz = ', n_yz, 'r2_yz = ', r2_yz)
-    #     fig, ax = plt.subplots(1, 3, figsize = (15, 5))
-    #     ax[0].plot(R_list_centers, surface_density_xy, 'k.')
-    #     if not np.isnan(n_xy):
-    #         ax[0].plot(R_list_centers, sersic(R_list_centers, *param_xy), 'r--')
-    #     ax[0].set_title('XY')
+        # #PLOT THE 3 FITS TO CHECK, IF THEY SUCCEDED
+        # if len(x_pos) > 300:
+        #     print('n_xy = ', n_xy, 'r2_xy = ', r2_xy)
+        #     print('n_xz = ', n_xz, 'r2_xz = ', r2_xz)
+        #     print('n_yz = ', n_yz, 'r2_yz = ', r2_yz)
+        #     fig, ax = plt.subplots(1, 3, figsize = (15, 5))
+        #     ax[0].plot(R_list_centers, surface_density_xy, 'k.')
+        #     if not np.isnan(n_xy):
+        #         ax[0].plot(R_list_centers, sersic(R_list_centers, *param_xy), 'r--')
+        #     ax[0].set_title('XY')
 
-    #     ax[1].plot(R_list_centers, surface_density_xz, 'k.')
-    #     if not np.isnan(n_xz):
-    #         ax[1].plot(R_list_centers, sersic(R_list_centers, *param_xz), 'r--')
-    #     ax[1].set_title('XZ')
+        #     ax[1].plot(R_list_centers, surface_density_xz, 'k.')
+        #     if not np.isnan(n_xz):
+        #         ax[1].plot(R_list_centers, sersic(R_list_centers, *param_xz), 'r--')
+        #     ax[1].set_title('XZ')
 
-    #     ax[2].plot(R_list_centers, surface_density_yz, 'k.')
-    #     if not np.isnan(n_yz):
-    #         ax[2].plot(R_list_centers, sersic(R_list_centers, *param_yz), 'r--')
-    #     ax[2].set_title('YZ')
-    #     plt.show()
+        #     ax[2].plot(R_list_centers, surface_density_yz, 'k.')
+        #     if not np.isnan(n_yz):
+        #         ax[2].plot(R_list_centers, sersic(R_list_centers, *param_yz), 'r--')
+        #     ax[2].set_title('YZ')
+        #     plt.show()
 
-    # which projection has the best fit?
-    if np.nanmax([r2_xy, r2_xz, r2_yz]) == r2_xy:
-        return n_xy
-    elif np.nanmax([r2_xy, r2_xz, r2_yz]) == r2_xz:
-        return n_xz
-    elif np.nanmax([r2_xy, r2_xz, r2_yz]) == r2_yz:
-        return n_yz
-    
+        # which projection has the best fit?
+        if np.nanmax([r2_xy, r2_xz, r2_yz]) == r2_xy:
+            return n_xy
+        elif np.nanmax([r2_xy, r2_xz, r2_yz]) == r2_xz:
+            return n_xz
+        elif np.nanmax([r2_xy, r2_xz, r2_yz]) == r2_yz:
+            return n_yz
+        
+    else:
+        #simulation base
+        ux = np.array([1, 0, 0]) 
+        uy = np.array([0, 1, 0])
+        uz = np.array([0, 0, 1])
+
+        #star positions in the galaxy frame, simulation axis
+        rx = st_x[part_list] - cx
+        ry = st_y[part_list] - cy
+        rz = st_z[part_list] - cz
+
+        #define galaxy axis: z-axis is the angular momentum vector
+        #galaxy rotation vector
+        L_gal = np.array([lx, ly, lz]) # Angular momentum vector
+        u_L_gal = L_gal/np.linalg.norm(L_gal) # Unitary vector of the angular momentum
+
+        ###########################################
+        #New base
+        u2z = np.copy(u_L_gal)
+        #vector perpendicular to the angular momentum vector
+        u2x = np.cross(u2z, uz)
+        u2x = u2x/np.linalg.norm(u2x)
+        #vector perpendicular to the angular momentum vector and u2x
+        u2y = np.cross(u2z, u2x)
+
+        #get star positions in the new base
+        r2x = np.dot(np.array([rx, ry, rz]).T, u2x)
+        r2y = np.dot(np.array([rx, ry, rz]).T, u2y)
+        r2z = np.dot(np.array([rx, ry, rz]).T, u2z)
+        ###########################################
+
+        Rmax = 2.*R05
+
+        #xbins
+        xmin = - Rmax
+        xmax = + Rmax
+
+        #ybins
+        ymin = - Rmax
+        ymax = + Rmax
+
+        #zbins
+        zmin = - Rmax
+        zmax = + Rmax
+
+        res = LL/4.
+
+        nx = int((xmax-xmin)/res)
+        ny = int((ymax-ymin)/res)
+        nz = int((zmax-zmin)/res)
+        xbins_edges = np.linspace(xmin, xmax, nx + 1)
+        ybins_edges = np.linspace(ymin, ymax, ny + 1)
+        zbins_edges = np.linspace(zmin, zmax, nz + 1)
+
+        #2D MAP IN THE FACE-ON PROJECTION
+        mass_faceOn,_,_,_ = binned_statistic_2d(r2x, r2y, np.ones(len(r2x)), statistic='sum', bins=[xbins_edges, ybins_edges])
+        density_faceOn = mass_faceOn/(res**2)
+
+        #get radial profile
+        rbins = np.arange(0, 1.5*Rmax, res)
+        rbinc = (rbins[1:] + rbins[:-1])/2.
+        density_faceOn_profile = get_radial_profile(density_faceOn, 0, 0, len(xbins_edges)-1, len(ybins_edges)-1, xbins_edges, ybins_edges, rbins)
+
+        # FIT THE TAIL: FROM SUPREME TO R_fit_max
+        # FIND THE PEAK OF THE SURFACE DENSITY
+        iRmax = np.argmax(density_faceOn_profile)
+        rbinc = rbinc[iRmax:]
+        density_faceOn_profile = density_faceOn_profile[iRmax:]
+
+        #FITTING THE SERSIC PROFILE
+        def sersic(R, Re, Ie, n):
+            bn = 2*n - 1/3 + 4/(405*n)
+            return Ie*np.exp( -bn*( (R/Re)**(1/n) - 1 ) )
+
+        guess_faceOn = [R05, density_faceOn_profile[0], 1.]
+
+        #FIT XY
+        try:
+            param, _ = curve_fit(sersic, rbinc, density_faceOn_profile, p0 = guess_faceOn)
+            n_faceOn = param[2]
+            predic = sersic(rbinc, *param)
+            r2_faceOn = r2_score(density_faceOn_profile, predic)
+        except:
+            n_faceOn = np.nan
+            r2_faceOn = np.nan
+
+            #apply gaussian filter and retry
+            density_faceOn_profile = gaussian_filter1d(density_faceOn_profile, 1.)
+
+            try:
+                param, _ = curve_fit(sersic, rbinc, density_faceOn_profile, p0 = guess_faceOn)
+                n_faceOn = param[2]
+                predic = sersic(rbinc, *param)
+                r2_faceOn = r2_score(density_faceOn_profile, predic)
+            except:
+                n_faceOn = np.nan
+                r2_faceOn = np.nan
+
+        # #CHECK UNUSUAL VALUES OF n
+        # if n_faceOn < 0.2 or n_faceOn > 30.:
+        #     n_xy = np.nan
+
+        # #PLOT THE 3 FITS TO CHECK, IF THEY SUCCEDED
+        # print('n_faceOn = ', n_faceOn, 'r2_faceOn = ', r2_faceOn)
+        # fig, ax = plt.subplots(1, 1, figsize = (15, 5))
+        # ax.plot(rbinc, density_faceOn_profile, 'k.')
+        # if not np.isnan(n_faceOn):
+        #     ax.plot(rbinc, sersic(rbinc, *param), 'r--')
+        # plt.show()
+
+        if np.isnan(n_faceOn):
+            return np.nan
+        
+        return n_faceOn
+
     return np.nan
 
 

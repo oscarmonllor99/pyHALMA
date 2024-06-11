@@ -213,7 +213,7 @@ def write_catalogue(haloes, iteration_data, PYHALMA_OUTPUT):
             if type(element) == int or type(element) == np.int32 or type(element) == np.int64:
                 catalogue_line += f'{element:15d}'
             elif type(element) == float or type(element) == np.float32 or type(element) == np.float64:
-                if abs(np.log10(element)) >= 5.:
+                if np.log10(element) >= 5. or np.log10(element) <= -2:
                     catalogue_line += f'{element:15.2e}'
                 else:
                     catalogue_line += f'{element:15.2f}'
@@ -451,8 +451,8 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
 
     else:
         try:
-            grid_data = read_masclet.read_grids(iteration-STEP, path=SIMU_MASCLET, parameters_path=SIMU_MASCLET, digits=5, read_general=True)
-            cosmo_time_before = grid_data[1]
+            grid_data_bef = read_masclet.read_grids(iteration-STEP, path=SIMU_MASCLET, parameters_path=SIMU_MASCLET, digits=5, read_general=True)
+            cosmo_time_before = grid_data_bef[1]
             dt = (cosmo_time - cosmo_time_before)*units.time_to_yr/1e9
         except:
             pass
@@ -932,8 +932,12 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 sersic_indices[ihal] = halo_properties.simple_sersic_index(
                                                                             part_list, st_x, st_y, st_z, center_x[ihal], 
                                                                             center_y[ihal], center_z[ihal], 
-                                                                            rad05[ihal], LL, num_particles[ihal]
+                                                                            rad05[ihal], LL, num_particles[ihal],
+                                                                            True, specific_angular_momentum_x[ihal],
+                                                                            specific_angular_momentum_y[ihal],
+                                                                            specific_angular_momentum_z[ihal],
                                                                             )
+                
                 star_formation_masses[ihal] = halo_properties.star_formation(part_list, st_mass, st_age, cosmo_time*units.time_to_yr/1e9, dt)
 
                 #SIGMA
@@ -978,7 +982,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                                                                 st_kdtree, dm_kdtree,
                                                                 cx, cy, cz, POT_RADIUS, rho_B
                                                                 )
-
+                    
                 # RPS EFFECTS
                 if RPS_FLAG:
                     (
@@ -995,6 +999,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                                                                             velocities_z[ihal], BRUTE_FORCE_LIM,
                                                                             mass_dm_part    
                                                                         )
+                    
 
                 # MOST BOUND PARTICLE --> POTENTIAL MINIMUM 
                 if POT_ENERGY_FLAG:
@@ -1071,8 +1076,9 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 def main_DM_halo_finder(ih):
                     asohf_dm_matches = np.zeros((asohf_dm_num), dtype=np.int32)
                     matches_distance = np.zeros((asohf_dm_num))
-                    asohf_dm_matches, matches_distance = DM_halo_finder(rad05[ih], center_x[ih], center_y[ih], center_z[ih], asohf_dm_data['R'], asohf_dm_data['x'], asohf_dm_data['y'], asohf_dm_data['z'], 
-                                                      asohf_dm_matches, matches_distance, asohf_dm_match_thres, fact_Rvir)
+                    asohf_dm_matches, matches_distance = DM_halo_finder(rad05[ih], center_x[ih], center_y[ih], center_z[ih], 
+                                                                        asohf_dm_data['R'], asohf_dm_data['x'], asohf_dm_data['y'], asohf_dm_data['z'], 
+                                                                        asohf_dm_matches, matches_distance, asohf_dm_match_thres, fact_Rvir)
                     
                     #Now, pick the closest halo fulfilling the criteria
                     if np.count_nonzero(asohf_dm_matches) == 0:
@@ -1475,7 +1481,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                                 I_START, I_END, DISP, LUMG,
                                 zeta, dlum, arcsec2kpc, area_arc ]
 
-                print('Calculating SEDs of the galaxies')
+                print('Calculating SEDs of galaxies')
                 for ihal in tqdm(range(num_halos)):
                     npart = num_particles[ihal] # number of particles in the halo
                     halo = new_groups_calipso[ihal] # halo particle indices for array slicing
@@ -1834,9 +1840,8 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
 
 ###########################################
 #Clean all variables
-del st_x, st_y, st_z, st_vx, st_vy, st_vz, st_mass, st_age, st_met, st_oripa, st_insitu
-del st_insitu, st_oripa, st_insitu
 gc.collect()
+
 ###########################################
 ########## ########## ########## ########## ########## 
 ########## ########## ########## ########## ########## 
