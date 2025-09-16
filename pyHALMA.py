@@ -27,7 +27,6 @@ from scipy.interpolate import RegularGridInterpolator
 from scipy.spatial import KDTree
 import gc
 
-
 ########## ########## ########## ########## ########## 
 ########## INPUT PARAMETERS FROM pyHALMA.dat #########
 ########## ########## ########## ########## ########## 
@@ -37,6 +36,8 @@ with open('pyHALMA.dat', 'r') as f:
     f.readline() # MAIN BLOCK
     f.readline()
     FIRST,LAST,STEP = np.array(f.readline().split()[0].split(','), dtype = np.int32)
+    f.readline()
+    START_FROM_CHECKPOINT = bool(int(f.readline()))
     f.readline()
     NX, NY, NZ = np.array(f.readline().split()[0].split(','), dtype = np.int32)
     f.readline()
@@ -406,20 +407,58 @@ print()
 #############################################################################################
 # Variables for accreted/in-situ mass calculation
 
-part_insitu_before2 = np.array([]) #For every particle, if it was insitu, two iterations before
-part_ih_before2 =  np.array([]) #For every particle, the halo it belonged to two iterations before
-part_oripas_before2 =  np.array([]) #For every particle, the oripas iteration two iterations before
-pro1_before2 = np.array([]) #For every halo, the main progenitor two iterations before
 
-part_insitu_before =  np.array([]) #For every particle, if it was insitu the previous iteration
-part_ih_before =  np.array([]) #For every particle, the halo it belonged to in the previous iteration
-part_oripas_before =  np.array([]) #For every particle, the oripas iteration before
+if START_FROM_CHECKPOINT:
+    try:
+        load_checkpoint = np.load(SIMU_MASCLET+'/pyHALMA_output/HALMA_checkpoint.npz', allow_pickle=True)
+    except:
+        print('ERROR: CHECKPOINT FILE NOT FOUND. STARTING FROM SCRATCH')
+        
+    info_start = load_checkpoint['info']
+    FIRST = int(info_start[0]) + STEP
+    cosmo_time_before = float(info_start[1]) #Time of the iteration before
+    n_haloes_before = int(info_start[2]) #Number of haloes in the iteration before
 
-####################################
+    print('')
+    print('STARTING FROM CHECKPOINT!!!. Iteration:', FIRST-STEP)
+    print('')
 
-oripas_before =  np.array([]) #For every halo, the oripas iteration before
-omm =  np.array([]) #Masses of the haloes in the iteration before
-cosmo_time_before = 0. #Time of the iteration before
+    oripas_before_conca = load_checkpoint['oripas_before'] #For every halo, the oripas iteration before
+    npart_before = load_checkpoint['npart'].astype(np.int32) #Number of particles in every halo in the iteration before
+    oripas_before = []
+    for ih in range(n_haloes_before):
+        low = sum(npart_before[:ih])
+        high = low + npart_before[ih]
+        npart_halo = npart_before[ih]
+        oripas_before.append(oripas_before_conca[low:high])
+    
+    omm = load_checkpoint['omm'] #Masses of the haloes in the iteration before
+
+
+    part_insitu_before = load_checkpoint['part_insitu_before'] #For every particle, if it was insitu the previous iteration
+    part_ih_before = load_checkpoint['part_ih_before'] #For every particle, the halo it belonged to in the previous iteration
+    part_oripas_before = load_checkpoint['part_oripas_before'] #For every particle, the oripas iteration before
+
+    part_insitu_before2 = load_checkpoint['part_insitu_before2'] #For every particle, if it was insitu, two iterations before
+    part_ih_before2 = load_checkpoint['part_ih_before2'] #For every particle, the halo it belonged to two iterations before
+    part_oripas_before2 = load_checkpoint['part_oripas_before2'] #For every particle, the oripas iteration two iterations before
+    pro1_before2 = load_checkpoint['pro1_before2'] #For every halo, the main progenitor two iterations before
+
+
+else:
+    part_insitu_before2 = np.array([]) 
+    part_ih_before2 =  np.array([]) 
+    part_oripas_before2 =  np.array([]) 
+    pro1_before2 = np.array([]) 
+
+    part_insitu_before =  np.array([]) 
+    part_ih_before =  np.array([]) 
+    part_oripas_before =  np.array([]) 
+
+    oripas_before =  np.array([])
+    omm =  np.array([]) 
+    cosmo_time_before = 0.
+
 
 for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
     print()
@@ -446,7 +485,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
     rho_B = RODO / rete**3 # Background density of the universe at this iteration
     
     dt = 0. #time step between iterations
-    if it_count>0:
+    if it_count>0 or START_FROM_CHECKPOINT:
         dt = (cosmo_time - cosmo_time_before)*units.time_to_yr/1e9
 
     else:
@@ -735,6 +774,9 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             ###########################################
             #CALCULATE CM, CM_vel AND phase-space cleaning
             print('---> Phase-space cleaning begins <---')
+            #Minimum number of particles for phase-space cleaning
+            min_part_PSC = 50
+
             center_x = []
             center_y = []
             center_z = []
@@ -779,7 +821,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 if not PSC_FLAG: #IF NOT PHASE-SPACE CLEANING, ALL PARTICLES ARE GOOD
                     control = np.ones(len(part_list)).astype(bool)
                 
-                if len(part_list) < 500: #if low number of particles, do not clean, as it may not converge
+                if len(part_list) < min_part_PSC: #if low number of particles, do not clean, as it may not converge
                     control = np.ones(len(part_list)).astype(bool)
 
                 #CLEANING DONE --> CALCULATE AGAIN CENTER OF MASS AND MASS
@@ -1104,7 +1146,6 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                         asohf_mass[ih] = 0.
                         asohf_Rvir[ih] = 0.
 
-                #print('Haloes matched after step 2: ', np.count_nonzero(asohf_IDs != -1), 'out of', num_halos)
                 print('     Done')
 
             if DM_FLAG:
@@ -1113,16 +1154,6 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 #Third step
                 ############################################################################################################
                 dm_mass = masclet_dm_data[3]*units.mass_to_sun
-
-                # @numba.njit(fastmath = True, parallel = True)
-                # def DM_mass_inside_galaxy(ih):
-                #     xcm = center_x[ih]
-                #     ycm = center_y[ih]
-                #     zcm = center_z[ih]
-                #     return np.sum(dm_mass[np.sqrt((xcm-dm_x)**2 + (ycm-dm_y)**2 + (zcm-dm_z)**2) < FACTOR_R12_DM*rad05[ih]])
-
-                # for ih in tqdm(range(num_halos)):
-                #     darkmatter_mass[ih] = DM_mass_inside_galaxy(ih)
 
                 for ih in tqdm(range(num_halos)):
                     darkmatter_mass[ih] = np.sum(dm_mass[dm_kdtree.query_ball_point( [center_x[ih], 
@@ -1155,7 +1186,6 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             ########################################################################################################################################
             ####### MERGER SECTION #####################
             ########################################################################################################################################
-
 
             print('-------> MERGERS/PROGENITORS <-------')
 
@@ -1270,12 +1300,6 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             print('-------> ACCRETION <-------')
 
             for ih, halo in enumerate(new_groups):
-                # #CONSIDER ALL STARS WITHIN 4*R_1/2 OF THE HALO CENTER and STARS BELONGING TO THE FoF group
-                # dist_condition = np.sqrt((center_x[ih]-st_x)**2 + (center_y[ih]-st_y)**2 + (center_z[ih]-st_z)**2) < FACTOR_R12_DM*rad05[ih]
-                # particles_inside = np.arange(len(st_x))[dist_condition]
-                # part_list = np.concatenate((halo, particles_inside))
-                # part_list = np.unique(part_list)
-
                 #JUST FoF GROUP
                 part_list = np.copy(halo)
 
@@ -1392,6 +1416,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 halo = new_groups[argsort_part[isort_part]]
                 oripas = st_oripa[halo]
                 oripas_before.append(oripas)
+            oripas_before_save = np.concatenate(np.array(oripas_before, dtype=object))
             ##########################################
             
             ##########################################
@@ -1408,6 +1433,16 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             for isort_part in range(len(argsort_part)):
                 halo = new_groups[argsort_part[isort_part]]
                 part_ih_before[halo] = isort_part + 1
+
+            #Save checkpoint
+            checkpoint_file = os.path.join(PYHALMA_OUTPUT, 'HALMA_checkpoint')
+            info_checkpoint = np.array([iteration, cosmo_time, len(new_groups)])
+            np.savez(checkpoint_file, 
+                info = info_checkpoint,
+                omm = omm, npart = num_particles, oripas_before = oripas_before_save,
+                part_ih_before = part_ih_before, part_oripas_before = part_oripas_before, part_insitu_before = part_insitu_before,
+                part_ih_before2 = part_ih_before2, part_oripas_before2 = part_oripas_before2, part_insitu_before2 = part_insitu_before2,
+                pro1_before2 = pro1_before2)
             ##########################################
 
             ############################################################################################################

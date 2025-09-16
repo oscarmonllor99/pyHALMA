@@ -1,16 +1,18 @@
 *************MAIN PARAMETERS*************************************************
 firts, last iteration,write interval --------------------------------------->
-0,350,50
+2500,6450,50
+start from checkpoint (0 -> no, 1 -> yes ) ------------------------------>
+0
 MASCLET cells nx,ny,nz: coarse hydro. grid --------------------------------->
 128,128,128
-AMR Patches, nx,ny,nz,max_level -------------------------------------------->
+AMR Patches nx,ny,nz,max_level --------------------------------------------->
 32,32,32,9
 maximum number of patches (NPALEV) ----------------------------------------->
-50000
+20000
 hubble cte(h), OMEGA matter, t0 -------------------------------------------->
 0.678,0.31,384.9627
 initial redshift, box size    ---------------------------------------------->
-100.0,40.
+100.,40.
 full domain (0 -> no, 1 -> yes ) ------------------------------------------->
 1
 if not, input domain (in input length units; x1,x2,y1,y2,z1,z2) ------------>
@@ -20,7 +22,7 @@ stellar particle mass (Msun) ----------------------------------------------->
 *****************************************************************************
 ************* FoF PARAMETERS*************************************************
 link(kpc) (fixed) ---------------------------------------------------------->
-2.4
+3.
 choose link according to particle mass (0 -> no, 1 -> yes ) ---------------->
 0
 use pyfof (0 -> no, 1 -> yes ) -------------------------------------------->
@@ -36,9 +38,9 @@ phase space cleaning (v/sigma), min. num. of part in cell ------------------>
 escape velocity cleaning: (0 -> no, 1 -> yes ), factor for cleaning -------->
 0,3.0
 ram-pressure stripping (0 -> no, 1 -> yes ) -------------------------------->
-0
+1
 calculate potential minimum (0 -> no, 1 -> yes ) --------------------------->
-0
+1
 factor times half-mass radius to consider particles in pot. energy calc. --->
 2.0
 maximum number of particles to consider brute-force ------------------------>
@@ -46,19 +48,19 @@ maximum number of particles to consider brute-force ------------------------>
 *****************************************************************************
 *************SETTING UP******************************************************
 number of CPU cores for NUMBA and OpenMP to parallelize -------------------->
-24
+4
 path that contains masclet_framework --------------------------------------->
-/path
+/home/monllor/projects/
 *****************************************************************************
 *************SUBSTRUCTURE PARAMETERS*****************************************
 search for substructure (0 -> no, 1 -> yes ) ------------------------------->
 1
 MINP sub, dec. factor, MIN_LL(kpc), dist. factor --------------------------->
-50,2.,0.5,0.75
+25,2.,0.5,0.75
 *****************************************************************************
 *************CALIPSO PARAMETERS**********************************************
 CALIPSO (0 -> no, 1 -> yes ) ----------------------------------------------->
-0
+1
 speed of light (km/s) ------------------------------------------------------>
 299792.458
 sun magnitude in SDSS filters (u, g, r, i) , AB magnitude ------------------>
@@ -68,8 +70,10 @@ sun metallicity ------------------------------------------------------------>
 spectral range (Amstrong) -------------------------------------------------->
 1000,10000
 *****************************************************************************
-*************ASOHF PARAMETERS************************************************
+************* DM PARAMETERS ************************************************
+search for DM (0 -> no, 1 -> yes ) ----------------------------------------->
+1
 combine with ASOHF catalogue (0 -> no, 1 -> yes ) -------------------------->
-0
+1
 factor times half-mass radius to search for DM if no ASOHF counterpart ----->
 4.0

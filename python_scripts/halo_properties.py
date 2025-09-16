@@ -908,8 +908,9 @@ def get_radial_profile(field2D, x0, y0, nx, ny, xedges, yedges, rbins):
             yc = (yedges[j] + yedges[j+1])/2 - y0
             r = np.sqrt(xc**2 + yc**2)
             ir = np.digitize(r, rbins) - 1
-            rprofile[ir] += field2D[i, j]
-            rcounter[ir] += 1
+            if ir >= 0 and ir < len(rbins)-1:
+                rprofile[ir] += field2D[i, j]
+                rcounter[ir] += 1
 
     rprofile = np.where(rcounter == 0., 0., rprofile/rcounter)
     return rprofile
@@ -930,6 +931,9 @@ def simple_sersic_index(part_list, st_x, st_y, st_z, cx, cy, cz, R05, LL, npart,
     #RADIAL LIMITS
     R_fit_min = 0.*R05
     R_fit_max = 2.*R05
+
+    #FaceOn not working sometimes
+    faceOn = False
 
     if not faceOn:
 
