@@ -387,6 +387,7 @@ def put_particles_in_grid(grid_centers, x, y, z):
     return which_cell_x, which_cell_y, which_cell_z
 
 
+
 def main(calipso_input, star_particle_data, ncell, vel_LOS, tam_i, tam_j, effective_radius, rete):
 
     ####### INPUT FORMAT
@@ -405,6 +406,7 @@ def main(calipso_input, star_particle_data, ncell, vel_LOS, tam_i, tam_j, effect
     [npart, mass, met, age] = star_particle_data
 
     # Finding fluxes in each cell and luminosity weighted quantities
+
     (
      flux_cell, flux_cell_sig, fluxtot, vell_malla, 
      sigl_malla, lum_malla, twl, Zwl, vell2_malla
@@ -477,7 +479,7 @@ def main(calipso_input, star_particle_data, ncell, vel_LOS, tam_i, tam_j, effect
                                                     W_FILTERS, RESPONSE_FILTERS,
                                                     dlum, zeta, ncell, ncell, flux_cell, area_arc)
 
-    
+
     sbf[fluxf==0.] = np.nan # if flux is zero, magnitudes are undefined
     magf[fluxf==0.] = np.nan
 

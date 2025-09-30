@@ -1,7 +1,9 @@
 ## Building the module to import from python
 f2py -c --f90flags='-O3 -mcmodel=medium -fopenmp -mieee-fp -ftree-vectorize -march=native' -m calipso  calipso_subroutines.f90
-
 f2py -c -lgomp --f90flags='-O3 -mcmodel=medium -fopenmp -mieee-fp -ftree-vectorize -march=native' -m particle  particle_subroutines.f90
 
+
 ## debug
-## -fcheck=all -Wall -Wextra -fbacktrace 
+## f2py -c --f90flags='-O0 -g -mcmodel=medium -fopenmp -mieee-fp -ftree-vectorize -march=native -fcheck=all -fbounds-check -fbacktrace -ffpe-trap=invalid,zero,overflow' -m calipso  calipso_subroutines.f90
+
+## f2py -c -lgomp --f90flags='-O0 -g -mcmodel=medium -fopenmp -mieee-fp -ftree-vectorize -march=native -fcheck=all -fbounds-check -fbacktrace -ffpe-trap=invalid,zero,overflow' -m particle  particle_subroutines.f90

@@ -284,7 +284,7 @@ def st_gas_dm_particles_inside(rete, L, ncoarse, grid_data,
 
 def RPS(gas_x, gas_y, gas_z, gas_vx, gas_vy, gas_vz, gas_mass, gas_temp, 
         dm_x, dm_y, dm_z, dm_mass, st_x, st_y, st_z, st_mass, vx, vy, vz, BRUTE_FORCE_LIM,
-        mass_dm_part):
+        mass_dm_part, num_dm_species):
     
     ##################################################################################
     # This routine aims to calculate the bound/unbound mass gas fraction of each halo
@@ -321,6 +321,7 @@ def RPS(gas_x, gas_y, gas_z, gas_vx, gas_vy, gas_vz, gas_mass, gas_temp,
         binding_energy += binding_energy_gas
         
     elif ngas > 0:
+
         binding_energy_gas = brute_force_binding_energy_fortran(
                             gas_mass, gas_x, gas_y, gas_z, gas_x, gas_y, gas_z
                             )
@@ -330,62 +331,94 @@ def RPS(gas_x, gas_y, gas_z, gas_vx, gas_vy, gas_vz, gas_mass, gas_temp,
 
     ##########################################
     # POTENTIAL ENERGY DUE TO DARK MATTER
-    #TAKE INTO ACCOUNT ALWAYS ALL l<=1 PARTICLES, AS THEY ARE
-    #THE MOST MASSIVE ONES
-    mass_l0 = mass_dm_part
-    mass_l1 = mass_dm_part/8
-    mass_l2 = mass_dm_part/8**2
-    mass_l3 = mass_dm_part/8**3
-    mass_l4 = mass_dm_part/8**4
 
-    # l = 0 and l = 1
-    condition_l01 = dm_mass >= 0.9*mass_l1
-    dm_x_mandatory = dm_x[condition_l01]
-    dm_y_mandatory = dm_y[condition_l01]
-    dm_z_mandatory = dm_z[condition_l01]
-    dm_mass_mandatory = dm_mass[condition_l01]
+    # If several DM species exists (low number of massive and high number of low mass particles)
+    # MASCLET OLD WAY
+    if num_dm_species > 1:
+        #TAKE INTO ACCOUNT ALWAYS ALL l<=1 PARTICLES, AS THEY ARE
+        #THE MOST MASSIVE ONES
+        mass_l0 = mass_dm_part
+        mass_l1 = mass_dm_part/8
+        mass_l2 = mass_dm_part/8**2
+        mass_l3 = mass_dm_part/8**3
+        mass_l4 = mass_dm_part/8**4
 
-    if np.count_nonzero(condition_l01) > 0:
-        binding_energy_dm = brute_force_binding_energy_fortran(
-                                dm_mass_mandatory, dm_x_mandatory, 
-                                dm_y_mandatory, dm_z_mandatory, gas_x, gas_y, gas_z
-                                )
-        
-        binding_energy += binding_energy_dm
+        # l = 0 and l = 1
+        condition_l01 = dm_mass >= 0.9*mass_l1
+        dm_x_mandatory = dm_x[condition_l01]
+        dm_y_mandatory = dm_y[condition_l01]
+        dm_z_mandatory = dm_z[condition_l01]
+        dm_mass_mandatory = dm_mass[condition_l01]
 
-    # l = 2, l = 3 and l = 4
-    condition_other = np.logical_not(condition_l01)
-    dm_x_other = dm_x[condition_other]
-    dm_y_other = dm_y[condition_other]
-    dm_z_other = dm_z[condition_other]
-    dm_mass_other = dm_mass[condition_other]
+        if np.count_nonzero(condition_l01) > 0:
+            binding_energy_dm = brute_force_binding_energy_fortran(
+                                    dm_mass_mandatory, dm_x_mandatory, 
+                                    dm_y_mandatory, dm_z_mandatory, gas_x, gas_y, gas_z
+                                    )
+            
+            binding_energy += binding_energy_dm
 
-    #Sampling the DM particles with replacement
-    ndm_other = len(dm_x_other)
-    if ndm_other > BRUTE_FORCE_LIM:
-        nsample_dm = np.max([BRUTE_FORCE_LIM, int(0.01*ndm_other)])
-        dm_part_list = np.arange(ndm_other)
-        sample_dm = np.random.choice(dm_part_list, nsample_dm, replace=True)
-        dm_x_other = dm_x_other[sample_dm]
-        dm_y_other = dm_y_other[sample_dm]
-        dm_z_other = dm_z_other[sample_dm]
-        dm_mass_other = dm_mass_other[sample_dm]
-        
-        binding_energy_dm = brute_force_binding_energy_fortran(
-                                dm_mass_other, dm_x_other,
+        # l = 2, l = 3 and l = 4
+        condition_other = np.logical_not(condition_l01)
+        dm_x_other = dm_x[condition_other]
+        dm_y_other = dm_y[condition_other]
+        dm_z_other = dm_z[condition_other]
+        dm_mass_other = dm_mass[condition_other]
+
+        #Sampling the DM particles with replacement
+        ndm_other = len(dm_x_other)
+        if ndm_other > BRUTE_FORCE_LIM:
+            nsample_dm = np.max([BRUTE_FORCE_LIM, int(0.01*ndm_other)])
+            dm_part_list = np.arange(ndm_other)
+            sample_dm = np.random.choice(dm_part_list, nsample_dm, replace=True)
+            dm_x_other = dm_x_other[sample_dm]
+            dm_y_other = dm_y_other[sample_dm]
+            dm_z_other = dm_z_other[sample_dm]
+            dm_mass_other = dm_mass_other[sample_dm]
+            
+            binding_energy_dm = brute_force_binding_energy_fortran(
+                                    dm_mass_other, dm_x_other,
+                                    dm_y_other, dm_z_other, gas_x, gas_y, gas_z
+                                    )
+                
+            binding_energy_dm = binding_energy_dm * ndm_other / nsample_dm
+            binding_energy += binding_energy_dm 
+
+        elif ndm_other > 0:
+            binding_energy_dm = brute_force_binding_energy_fortran(
+                                dm_mass_other, dm_x_other, 
                                 dm_y_other, dm_z_other, gas_x, gas_y, gas_z
                                 )
             
-        binding_energy_dm = binding_energy_dm * ndm_other / nsample_dm
-        binding_energy += binding_energy_dm 
+            binding_energy += binding_energy_dm
+ 
+    # if only 1 dm species exists, sample all particles
+    else:
+        ndm = len(dm_x)
+        if ndm > BRUTE_FORCE_LIM:
+            nsample_dm = np.max([BRUTE_FORCE_LIM, int(0.01*ndm)])
+            dm_part_list = np.arange(ndm)
+            sample_dm = np.random.choice(dm_part_list, nsample_dm, replace=True)
+            dm_x_sample = dm_x[sample_dm]
+            dm_y_sample = dm_y[sample_dm]
+            dm_z_sample = dm_z[sample_dm]
+            dm_mass_sample = dm_mass[sample_dm]
+            
+            binding_energy_dm = brute_force_binding_energy_fortran(
+                                    dm_mass_sample, dm_x_sample,
+                                    dm_y_sample, dm_z_sample, gas_x, gas_y, gas_z
+                                    )
+                
+            binding_energy_dm = binding_energy_dm * ndm / nsample_dm
+            binding_energy += binding_energy_dm
 
-    elif ndm_other > 0:
-        binding_energy_dm = brute_force_binding_energy_fortran(
-                            dm_mass_other, dm_x_other, 
-                            dm_y_other, dm_z_other, gas_x, gas_y, gas_z
-                            )
-        
-        binding_energy += binding_energy_dm
+        elif ndm > 0:
+            binding_energy_dm = brute_force_binding_energy_fortran(
+                                dm_mass, dm_x, 
+                                dm_y, dm_z, gas_x, gas_y, gas_z
+                                )
+            
+            binding_energy += binding_energy_dm
 
     ################################################
 

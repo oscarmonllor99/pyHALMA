@@ -64,11 +64,11 @@ contains
     Zwl(:,:) = 0.
     vell2_malla(:,:) = 0.
 
-    !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(iage, imet, tam_ii, tam_jj, ip, iw, &
-    !$OMP                                  lpix, shift, waves, fluxs, lump, dage, &
-    !$OMP                                  dmet, ssp2, wave2)
-    !$OMP DO REDUCTION(+: fluxtot, flux_cell, flux_cell_sig, vell_malla, sigl_malla, lum_malla, &
-    !$OMP                 twl, Zwl, vell2_malla)
+    ! !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(iage, imet, tam_ii, tam_jj, ip, iw, &
+    ! !$OMP                                  lpix, shift, waves, fluxs, lump, dage, &
+    ! !$OMP                                  dmet, ssp2, wave2)
+    ! !$OMP DO REDUCTION(+: fluxtot, flux_cell, flux_cell_sig, vell_malla, sigl_malla, lum_malla, &
+    ! !$OMP                 twl, Zwl, vell2_malla)
     do ip = 1, npart
         dage = abs(age_span - age(ip))
         iage = minloc(array = dage, dim = nages)
@@ -108,8 +108,8 @@ contains
         twl(tam_ii, tam_jj) = twl(tam_ii, tam_jj) + lump(ip)*age(ip)
         Zwl(tam_ii, tam_jj) = Zwl(tam_ii, tam_jj) + lump(ip)*met(ip)  
     enddo
-    !$OMP END DO
-    !$OMP END PARALLEL
+    ! !$OMP END DO
+    ! !$OMP END PARALLEL
 
     ! --------------- completing quantities using luminosity as weight
 

@@ -687,6 +687,13 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                                                                     output_position=True, output_velocity=False, output_mass=True, read_region=read_region)
                     print('     Done')
 
+
+            # IDENTIFY DARK MATTER SPECIES IF FIRST ITERATION
+            if it_count == 0:
+                num_dm_species = len(np.unique(masclet_dm_data[3]))
+                print('     Number of DM species:', num_dm_species)
+
+
             # BUILD DARK MATTER KDTREE FOR POT. ENERGY PURPOSES
             if DM_FLAG or RPS_FLAG or POT_ENERGY_FLAG:
                 ##############################################
@@ -697,7 +704,6 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 print('     Time to build DM kdtree:', time.time()-t0, 's')
                 ##############################################
                 print()
-
 
             ###########################################
             ###########################################
@@ -1024,7 +1030,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                                                                 st_kdtree, dm_kdtree,
                                                                 cx, cy, cz, POT_RADIUS, rho_B
                                                                 )
-                    
+
                 # RPS EFFECTS
                 if RPS_FLAG:
                     (
@@ -1039,7 +1045,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                                                                             st_x_in, st_y_in, st_z_in, st_mass_in,
                                                                             velocities_x[ihal], velocities_y[ihal], 
                                                                             velocities_z[ihal], BRUTE_FORCE_LIM,
-                                                                            mass_dm_part    
+                                                                            mass_dm_part, num_dm_species    
                                                                         )
                     
 
@@ -1434,17 +1440,6 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 halo = new_groups[argsort_part[isort_part]]
                 part_ih_before[halo] = isort_part + 1
 
-            #Save checkpoint
-            checkpoint_file = os.path.join(PYHALMA_OUTPUT, 'HALMA_checkpoint')
-            info_checkpoint = np.array([iteration, cosmo_time, len(new_groups)])
-            np.savez(checkpoint_file, 
-                info = info_checkpoint,
-                omm = omm, npart = num_particles, oripas_before = oripas_before_save,
-                part_ih_before = part_ih_before, part_oripas_before = part_oripas_before, part_insitu_before = part_insitu_before,
-                part_ih_before2 = part_ih_before2, part_oripas_before2 = part_oripas_before2, part_insitu_before2 = part_insitu_before2,
-                pro1_before2 = pro1_before2)
-            ##########################################
-
             ############################################################################################################
             # CALIPSO BLOCK
             ############################################################################################################
@@ -1535,6 +1530,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                     grid_edges = np.arange(-rmax[ihal]*1e3 - res, rmax[ihal]*1e3 + res, res)
                     grid_centers = (grid_edges[1:] + grid_edges[:-1]) / 2
                     ncell = len(grid_centers)  # number of cells in each direction
+
                     which_cell_x, which_cell_y, which_cell_z = pycalipso.put_particles_in_grid(grid_centers, x, y, z)
 
                     # finner grid to interpolate
@@ -1571,7 +1567,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                         gr, ur,
                         sbf, magf, fluxf    )  = pycalipso.main(calipso_input, star_particle_data, 
                                                             ncell, vel_LOS, tam_i, tam_j, effective_radius, rete)
-
+                    
                     # SÉRSIC INDEX WITH LIGHT (g filter SDSS)
                     # FIRST: LINEAR INTERPOLATION OF THE FLUX IN THE GRID
 
@@ -1872,6 +1868,18 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
         all_particles_in_haloes = np.concatenate(new_groups)
         np.save(PYHALMA_OUTPUT + '/stellar_particles'+string_it+'.npy', all_particles_in_haloes)
     ###########################################
+
+    #save checkpoint ##########################
+    checkpoint_file = os.path.join(PYHALMA_OUTPUT, 'HALMA_checkpoint')
+    info_checkpoint = np.array([iteration, cosmo_time, len(new_groups)])
+    np.savez(checkpoint_file, 
+        info = info_checkpoint,
+        omm = omm, npart = num_particles, oripas_before = oripas_before_save,
+        part_ih_before = part_ih_before, part_oripas_before = part_oripas_before, part_insitu_before = part_insitu_before,
+        part_ih_before2 = part_ih_before2, part_oripas_before2 = part_oripas_before2, part_insitu_before2 = part_insitu_before2,
+        pro1_before2 = pro1_before2)
+    ##########################################
+
 
 ###########################################
 #Clean all variables
