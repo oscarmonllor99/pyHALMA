@@ -134,25 +134,16 @@ with open('pyHALMA.dat', 'r') as f:
 #functions to search for asohf correspondences
 if ASOHF_FLAG:
     @numba.njit(fastmath = True)
-    def match_finder(R1, x1, y1, z1, R2, x2, y2, z2, asohf_matches, thres = 1.):
+    def match_finder(R1, x1, y1, z1, R2, x2, y2, z2, asohf_matches, thres,
+                     fR1, fR2):
         dim2 = len(R2)
+        dists = np.zeros(dim2, dtype = np.float64)
         for j in range(dim2):
-            if (np.sqrt((x1-x2[j])**2 + (y1-y2[j])**2 + (z1-z2[j])**2) < thres*(R1 + R2[j]) +  LL):
+            dists[j] = np.sqrt((x1-x2[j])**2 + (y1-y2[j])**2 + (z1-z2[j])**2)
+            if (dists[j] < thres*(fR1*R1 + fR2*R2[j]) +  LL):
                 asohf_matches[j] = 1
-        return asohf_matches
 
-    @numba.njit(fastmath = True)
-    def DM_halo_finder(R1, x1, y1, z1, R2, x2, y2, z2, 
-                       asohf_dm_matches, matches_distance, thres = 1., fact_Rvir = 0.5):
-        dim2 = len(x2)
-        for j in range(dim2):
-            dist = np.sqrt((x1-x2[j])**2 + (y1-y2[j])**2 + (z1-z2[j])**2)
-            if dist < (thres*R1 + fact_Rvir*R2[j]):
-                asohf_dm_matches[j] = 1
-                matches_distance[j] = dist
-
-        return asohf_dm_matches, matches_distance
-    
+        return asohf_matches, dists
 
 def good_groups(groups, minp):
     return np.array([len(groups[ig]) >= minp for ig in range(len(groups))], dtype = bool)
@@ -433,7 +424,6 @@ if START_FROM_CHECKPOINT:
         oripas_before.append(oripas_before_conca[low:high])
     
     omm = load_checkpoint['omm'] #Masses of the haloes in the iteration before
-
 
     part_insitu_before = load_checkpoint['part_insitu_before'] #For every particle, if it was insitu the previous iteration
     part_ih_before = load_checkpoint['part_ih_before'] #For every particle, the halo it belonged to in the previous iteration
@@ -868,9 +858,22 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             print('Number of haloes after phase-space cleaning:', num_halos)
             print('Number of particles in haloes after cleaning:', n_part_in_halos)
 
-            ##########################################################################
-            ##########################################################################
-
+            ############################################################################
+            #SORT ASCENDING IN NUM PARTICLES ALL ARRAYS:
+            sort_indices = np.flip(np.argsort(num_particles))
+            new_groups_sorted = [new_groups[i] for i in sort_indices]
+            new_groups = new_groups_sorted
+            center_x = center_x[sort_indices]
+            center_y = center_y[sort_indices]
+            center_z = center_z[sort_indices]
+            masses = masses[sort_indices]
+            rmax = rmax[sort_indices]
+            num_particles = num_particles[sort_indices]
+            num_cells = num_cells[sort_indices]
+            which_cell_list_x = which_cell_list_x[sort_indices]
+            which_cell_list_y = which_cell_list_y[sort_indices]
+            which_cell_list_z = which_cell_list_z[sort_indices]
+            ############################################################################
 
             ##########################################################################
             #CALCULATE HALO PROPERTIES
@@ -1074,73 +1077,82 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 print('     Matching ASOHF haloes   ')
                 #First, find ASOHF halo ID that corresponds to this FoF stellar halo
                 #Two steps, first find the ASOHF stellar halo intersecting with the FoF stellar halo
-                #Then, for the haloes without intersection, find the closest ASOHF DM stellar halo fulfilling 
+                #Then, for the st haloes without intersection, find the closest ASOHF DM halo fulfilling 
                 #   the criteria:  ---->  dist(C_dm, C_st) < R_st  <-----
                 #The third and last step is calculating the dark matter mass inside 4*R_1/2 = 2*R_gal for those galaxies
                 #   that didn't have a match in the first two steps
+
                 ############################################################################################################
                 #First step
                 ############################################################################################################
 
-                asohf_match_thres = 1.
+                thres = 1.
+                rad1_factor = 1.
+                rad2_factor =  0.3
+                asohf_st_indices = np.arange(0, asohf_st_num, 1)
                 asohf_already_matched = np.zeros((asohf_st_num), dtype = np.int32)
                 for ih in tqdm(range(num_halos)):
                     asohf_matches = np.zeros((asohf_st_num), dtype=np.int32)
-                    asohf_matches = match_finder(rad05[ih], center_x[ih], center_y[ih], center_z[ih], 
+                    asohf_matches, asohf_dists = match_finder(rad05[ih], center_x[ih], center_y[ih], center_z[ih], 
                                                  asohf_st_data['Rhalf']/1e3, asohf_st_data['x'], asohf_st_data['y'], asohf_st_data['z'], 
-                                                 asohf_matches, asohf_match_thres)
-                    there_is_a_match = True
-                    this_halo_matches = asohf_st_data['id'][asohf_matches == 1] - 1
-
+                                                 asohf_matches, thres, rad1_factor, rad2_factor)
+                    
+                    this_halo_matches = asohf_st_indices[asohf_matches == 1] 
                     if len(this_halo_matches) == 0:
                         asohf_IDs[ih] = -1
+                        continue
 
-                    else:
-                        matches_masses = asohf_st_data['Mhalf'][this_halo_matches]
-                        the_match = this_halo_matches[np.argmax(matches_masses)]
+                    matches_dists = asohf_dists[this_halo_matches]
+                    matches_dists = matches_dists[asohf_already_matched[this_halo_matches] == 0]
+                    if len(matches_dists) == 0:
+                        asohf_IDs[ih] = -1
+                        continue
 
-                        #If the match is already matched, find the next best match
-                        while asohf_already_matched[the_match] == 1:
-                            matches_masses[np.argmax(matches_masses)] = 0
-                            the_match = this_halo_matches[np.argmax(matches_masses)]
-                            if np.count_nonzero(matches_masses) == 0 and asohf_already_matched[the_match] == 1:
-                                asohf_IDs[ih] = -1
-                                there_is_a_match = False
-                                break
-
-                        if there_is_a_match:
-                            asohf_IDs[ih] = asohf_st_data['DMid'][the_match]
-                            asohf_already_matched[the_match] = 1
+                    the_match = this_halo_matches[np.argmin(matches_dists)]
+                    asohf_IDs[ih] = asohf_st_data['DMid'][the_match]
+                    asohf_already_matched[the_match] = 1
 
                 ############################################################################################################
-                #Second step (parallel, as there are lots of DM haloes)
+                #Second step
                 ############################################################################################################
                 haloes_without_match = np.arange(num_halos)[asohf_IDs == -1]
 
                 #print('Haloes matched with step 1: ', np.count_nonzero(asohf_IDs != -1), 'out of', num_halos)
 
-                asohf_dm_match_thres = 1.
-                fact_Rvir = 1
-                def main_DM_halo_finder(ih):
+                thres = 1.
+                rad1_factor = 1.
+                rad2_factor = 0.1
+                asohf_dm_indices = np.arange(0, asohf_dm_num, 1)
+                asohf_already_matched_dm = np.zeros((asohf_dm_num), dtype = np.int32)
+
+                #First, check which IDs are already matched from st halos (st halos live in dm halos)
+                for ist in range(asohf_st_num):
+                    if asohf_already_matched[ist] == 0:
+                        continue
+                    dm_id = asohf_st_data['DMid'][ist]
+                    dm_index = np.argmin( np.abs(asohf_dm_data['id'] - dm_id) )
+                    asohf_already_matched_dm[dm_index] = 1
+
+                for ih2 in tqdm(haloes_without_match):
                     asohf_dm_matches = np.zeros((asohf_dm_num), dtype=np.int32)
-                    matches_distance = np.zeros((asohf_dm_num))
-                    asohf_dm_matches, matches_distance = DM_halo_finder(rad05[ih], center_x[ih], center_y[ih], center_z[ih], 
+                    asohf_dm_matches, asohf_dists = match_finder(rad05[ih2], center_x[ih2], center_y[ih2], center_z[ih2], 
                                                                         asohf_dm_data['R'], asohf_dm_data['x'], asohf_dm_data['y'], asohf_dm_data['z'], 
-                                                                        asohf_dm_matches, matches_distance, asohf_dm_match_thres, fact_Rvir)
+                                                                        asohf_dm_matches, thres, rad1_factor, rad2_factor)
                     
-                    #Now, pick the closest halo fulfilling the criteria
-                    if np.count_nonzero(asohf_dm_matches) == 0:
-                        ih_dm_match = -1
-                    else:
-                        ih_dm_match = asohf_dm_data['id'][np.argmin(matches_distance[asohf_dm_matches == 1])]
+                    this_halo_dm_matches = asohf_dm_indices[asohf_dm_matches == 1] 
+                    if len(this_halo_dm_matches) == 0:
+                        asohf_IDs[ih2] = -1
+                        continue
 
-                    return ih_dm_match
-                
-                with multiprocessing.get_context('fork').Pool(NCORE) as p:
-                    results_DM_halo_finder = list(tqdm(p.imap(main_DM_halo_finder, haloes_without_match), total=len(haloes_without_match)))
+                    matches_dists = asohf_dists[this_halo_dm_matches]
+                    matches_dists = matches_dists[asohf_already_matched_dm[this_halo_dm_matches] == 0]
+                    if len(matches_dists) == 0:
+                        asohf_IDs[ih2] = -1
+                        continue
 
-                for ih2, result in enumerate(results_DM_halo_finder):
-                    asohf_IDs[haloes_without_match[ih2]] = result
+                    the_match = this_halo_dm_matches[np.argmin(matches_dists)]
+                    asohf_IDs[ih2] = asohf_dm_data['id'][the_match]
+                    asohf_already_matched_dm[the_match] = 1
 
                 #Now, calculate the dark matter mass and Rvir
                 for ih in range(num_halos):
@@ -1343,83 +1355,13 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             ############################################################################################################
 
 
-            ###########################################################
-            ####### SORTING BY NUMBER OF PARTICLES ##################
-            ###########################################################
-
-            argsort_part = np.flip(np.argsort(num_particles)) #sorted descending
-
-            num_particles = num_particles[argsort_part]
-            num_cells = num_cells[argsort_part]
-            which_cell_list_x = which_cell_list_x[argsort_part]
-            which_cell_list_y = which_cell_list_y[argsort_part]
-            which_cell_list_z = which_cell_list_z[argsort_part]
-            masses = masses[argsort_part]
-            star_formation_masses = star_formation_masses[argsort_part]
-            insitu_masses = insitu_masses[argsort_part]
-            rmax = rmax[argsort_part]
-            rad05 = rad05[argsort_part]
-            rad05_x = rad05_x[argsort_part]
-            rad05_y = rad05_y[argsort_part]
-            rad05_z = rad05_z[argsort_part]
-            sig_3D = sig_3D[argsort_part]
-            sig_1D_x = sig_1D_x[argsort_part]
-            sig_1D_y = sig_1D_y[argsort_part]
-            sig_1D_z = sig_1D_z[argsort_part]
-            specific_angular_momentum = specific_angular_momentum[argsort_part]
-            specific_angular_momentum_x = specific_angular_momentum_x[argsort_part]
-            specific_angular_momentum_y = specific_angular_momentum_y[argsort_part]
-            specific_angular_momentum_z = specific_angular_momentum_z[argsort_part]
-            center_x = center_x[argsort_part]
-            center_y = center_y[argsort_part]
-            center_z = center_z[argsort_part]
-            density_peak_x = density_peak_x[argsort_part]
-            density_peak_y = density_peak_y[argsort_part]
-            density_peak_z = density_peak_z[argsort_part]
-            velocities_x = velocities_x[argsort_part]
-            velocities_y = velocities_y[argsort_part]
-            velocities_z = velocities_z[argsort_part]
-            pro1 = pro1[argsort_part]
-            pro2 = pro2[argsort_part]
-            n_mergers = n_mergers[argsort_part]
-            merger_type = merger_type[argsort_part]
-            stellar_ages = stellar_ages[argsort_part]
-            stellar_age_mass = stellar_age_mass[argsort_part]
-            metallicities = metallicities[argsort_part]
-            metallicities_mass = metallicities_mass[argsort_part]
-            vsigma = vsigma[argsort_part]
-            lambda_ensellem = lambda_ensellem[argsort_part]
-            kinematic_morphologies = kinematic_morphologies[argsort_part]
-            tully_fisher_velocities = tully_fisher_velocities[argsort_part]
-            s_axis_major = s_axis_major[argsort_part]
-            s_axis_intermediate = s_axis_intermediate[argsort_part]
-            s_axis_minor = s_axis_minor[argsort_part]
-            sersic_indices = sersic_indices[argsort_part]
-            gas_masses = gas_masses[argsort_part]
-            cold_bound_gas_fractions = cold_bound_gas_fractions[argsort_part]
-            cold_unbound_gas_masses = cold_unbound_gas_masses[argsort_part]
-            hot_unbound_gas_masses = hot_unbound_gas_masses[argsort_part]
-            SMBH_masses = SMBH_masses[argsort_part]
-            asohf_IDs = asohf_IDs[argsort_part]
-            asohf_mass = asohf_mass[argsort_part]
-            asohf_Rvir = asohf_Rvir[argsort_part]
-            darkmatter_mass = darkmatter_mass[argsort_part]
-            most_bound_x = most_bound_x[argsort_part]
-            most_bound_y = most_bound_y[argsort_part]
-            most_bound_z = most_bound_z[argsort_part]
-            most_bound_id = most_bound_id[argsort_part]
-
-            ##########################################
-            ##########################################
-            ##########################################
-
             ##########################################
             # Oripas of particle in halos of iteration before
             # and masses before
             oripas_before = []
             omm = np.copy(masses)
-            for isort_part in range(len(argsort_part)): 
-                halo = new_groups[argsort_part[isort_part]]
+            for ih in range(num_halos):
+                halo = new_groups[ih]
                 oripas = st_oripa[halo]
                 oripas_before.append(oripas)
             oripas_before_save = np.concatenate(np.array(oripas_before, dtype=object))
@@ -1436,9 +1378,9 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
             part_ih_before = np.zeros(len(st_x), dtype=np.int32)
             part_oripas_before = np.copy(st_oripa)
             part_insitu_before = np.copy(st_insitu)
-            for isort_part in range(len(argsort_part)):
-                halo = new_groups[argsort_part[isort_part]]
-                part_ih_before[halo] = isort_part + 1
+            for ih in range(num_halos):
+                halo = new_groups[ih]
+                part_ih_before[halo] = ih + 1 
 
             ############################################################################################################
             # CALIPSO BLOCK
@@ -1476,9 +1418,6 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 print('Establishing cosmology')
                 print()
 
-                #Sorting haloes
-                new_groups_calipso = np.array(new_groups, dtype = object)[argsort_part]
-
                 #Grid data to find resolution for calipso
                 npatch = grid_data[5] #number of patches in each level, starting in l=0
                 patchnx = grid_data[6] #patchnx (...): x-extension of each patch (in level l cells) (and Y and Z)
@@ -1514,7 +1453,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
                 print('Calculating SEDs of galaxies')
                 for ihal in tqdm(range(num_halos)):
                     npart = num_particles[ihal] # number of particles in the halo
-                    halo = new_groups_calipso[ihal] # halo particle indices for array slicing
+                    halo = new_groups[ihal] # halo particle indices for array slicing
                     halo = np.array(halo, dtype = int)
                     
                     mass = st_mass[halo] #mass of halo particles
@@ -1864,7 +1803,6 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
     if st_x.shape[0] > 0 and len(groups)>0:
         string_it = f'{iteration:05d}'
         new_groups = np.array(new_groups, dtype=object)
-        new_groups = new_groups[argsort_part]
         all_particles_in_haloes = np.concatenate(new_groups)
         np.save(PYHALMA_OUTPUT + '/stellar_particles'+string_it+'.npy', all_particles_in_haloes)
     ###########################################
