@@ -679,7 +679,7 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
 
 
             # IDENTIFY DARK MATTER SPECIES IF FIRST ITERATION
-            if it_count == 0:
+            if it_count == 0 and RPS_FLAG:
                 num_dm_species = len(np.unique(masclet_dm_data[3]))
                 print('     Number of DM species:', num_dm_species)
 
@@ -1801,22 +1801,25 @@ for it_count, iteration in enumerate(range(FIRST, LAST+STEP, STEP)):
     ###########################################
     #save particles in .npy (python friendly)
     if st_x.shape[0] > 0 and len(groups)>0:
+
+        #catalogue
         string_it = f'{iteration:05d}'
         new_groups = np.array(new_groups, dtype=object)
         all_particles_in_haloes = np.concatenate(new_groups)
         np.save(PYHALMA_OUTPUT + '/stellar_particles'+string_it+'.npy', all_particles_in_haloes)
+
+        #checkpoint
+        checkpoint_file = os.path.join(PYHALMA_OUTPUT, 'HALMA_checkpoint')
+        info_checkpoint = np.array([iteration, cosmo_time, len(new_groups)])
+        np.savez(checkpoint_file, 
+            info = info_checkpoint,
+            omm = omm, npart = num_particles, oripas_before = oripas_before_save,
+            part_ih_before = part_ih_before, part_oripas_before = part_oripas_before, part_insitu_before = part_insitu_before,
+            part_ih_before2 = part_ih_before2, part_oripas_before2 = part_oripas_before2, part_insitu_before2 = part_insitu_before2,
+            pro1_before2 = pro1_before2)
+        
     ###########################################
 
-    #save checkpoint ##########################
-    checkpoint_file = os.path.join(PYHALMA_OUTPUT, 'HALMA_checkpoint')
-    info_checkpoint = np.array([iteration, cosmo_time, len(new_groups)])
-    np.savez(checkpoint_file, 
-        info = info_checkpoint,
-        omm = omm, npart = num_particles, oripas_before = oripas_before_save,
-        part_ih_before = part_ih_before, part_oripas_before = part_oripas_before, part_insitu_before = part_insitu_before,
-        part_ih_before2 = part_ih_before2, part_oripas_before2 = part_oripas_before2, part_insitu_before2 = part_insitu_before2,
-        pro1_before2 = pro1_before2)
-    ##########################################
 
 
 ###########################################
