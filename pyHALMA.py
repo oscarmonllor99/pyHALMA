@@ -251,14 +251,16 @@ SIMU_MASCLET = 'simu_masclet'
 ##############################################
 # CREATE PARAMETERS.JSON FILE FOR READ_MASCLET
 ##############################################
-PARAMETERS_FILE = 'masclet_parameters.json'
-parameters = {'NMAX': int(NX), 'NMAY': int(NY), 'NMAZ': int(NZ),
-              'NPALEV': int(NPALEV), 'NLEVELS': int(NLEVELS),
-              'NAMRX': int(NAMRX), 'NAMRY': int(NAMRY), 'NAMRZ': int(NAMRZ), 
-              'SIZE': float(L)}
+#check if file exists
+if not(os.path.exists(os.path.join(SIMU_MASCLET, 'masclet_parameters.json'))):
+    PARAMETERS_FILE = 'masclet_parameters.json'
+    parameters = {'NMAX': int(NX), 'NMAY': int(NY), 'NMAZ': int(NZ),
+                'NPALEV': int(NPALEV), 'NLEVELS': int(NLEVELS),
+                'NAMRX': int(NAMRX), 'NAMRY': int(NAMRY), 'NAMRZ': int(NAMRZ), 
+                'SIZE': float(L)}
 
-with open(os.path.join(SIMU_MASCLET, PARAMETERS_FILE), 'w') as json_file:
-    json.dump(parameters, json_file)
+    with open(os.path.join(SIMU_MASCLET, PARAMETERS_FILE), 'w') as json_file:
+        json.dump(parameters, json_file)
 ##############################################
 
 ##############################################
